@@ -1,36 +1,44 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Full-Stack Todo Application
 
-## Getting Started
+A production-ready task management SaaS built with Next.js 15, Tailwind CSS, Recharts, and AWS Amplify (Manual Configuration).
 
-First, run the development server:
+## 🚀 Features
+- **Next.js App Router**: Utilizing the latest React Server Components and Edge Middleware.
+- **Tailwind CSS & Dark Mode**: Beautiful, responsive design with automatic and manual Light/Dark theme toggling via `next-themes`.
+- **Custom Authentication UI**: Highly secure, client-validated Login, Registration, and Password Reset forms using `react-hook-form` and `zod`.
+- **Advanced Dashboard**: Visual metrics using `Recharts`.
+- **Task Management**: Filter, search, create, edit, and delete tasks.
+- **Amazon S3 Integration**: Upload and attach files securely to tasks with private, pre-signed URLs.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## 🛠️ Tech Stack
+- **Frontend**: Next.js, React, TypeScript, Tailwind CSS, Lucide React, React Hot Toast
+- **Backend (Manual)**: AWS Cognito, AWS AppSync (GraphQL), Amazon DynamoDB, Amazon S3
+- **Amplify Client**: `@aws-amplify/adapter-nextjs`, `aws-amplify`
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 📦 Local Development
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. **Install Dependencies**
+   ```bash
+   npm install
+   ```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+2. **Configure AWS Backend**
+   Because this project uses the **Manual AWS Console Architecture**, you must provision the backend resources yourself in your AWS account.
+   
+   👉 **Please read the [AWS_SETUP_GUIDE.md](./AWS_SETUP_GUIDE.md) for step-by-step instructions.**
 
-## Learn More
+3. **Start the Development Server**
+   ```bash
+   npm run dev
+   ```
+   Open `http://localhost:3000` in your browser.
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 📁 Project Structure
+- `/src/app` - Next.js App Router pages and API routes.
+- `/src/components` - Reusable UI components (Layout, ThemeToggle, ConfigureAmplifyClientSide).
+- `/src/features` - Feature-specific logic (e.g., Task CRUD operations).
+- `/src/graphql` - Raw GraphQL queries, mutations, and subscriptions.
+- `/src/providers` - React Context providers (AuthProvider).
+- `/src/services` - External API services (e.g., S3 Storage upload/delete).
+- `/src/types` - Global TypeScript interfaces.
+- `/amplifyconfiguration.json` - Your manual AWS mapping configuration.

@@ -1,0 +1,114 @@
+type Attachment {
+  key: String!
+  name: String!
+  type: String!
+  size: Int!
+}
+
+input AttachmentInput {
+  key: String!
+  name: String!
+  type: String!
+  size: Int!
+}
+
+type Todo {
+  id: ID!
+  title: String!
+  description: String
+  status: String!
+  priority: String!
+  dueDate: AWSDateTime
+  startDate: AWSDateTime
+  endDate: AWSDateTime
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+  projectId: String
+  assigneeId: String
+  userId: String!
+  attachments: [Attachment!]
+  labels: [String!]
+  comments: [String!]
+  recurrenceRule: String
+  recurrenceExceptions: [String!]
+  originalTodoId: ID
+  reminderSetting: String
+}
+
+type Project {
+  id: ID!
+  name: String!
+  description: String
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+  ownerId: String!
+  attachments: [Attachment!]
+}
+
+type Notification {
+  id: ID!
+  userId: String!
+  title: String!
+  message: String!
+  read: Boolean!
+  createdAt: AWSDateTime!
+}
+
+type AuditLog {
+  id: ID!
+  entityId: String!
+  entityType: String!
+  action: String!
+  userId: String!
+  timestamp: AWSDateTime!
+}
+
+type Analytics {
+  id: ID!
+  type: String!
+  data: String!
+  timestamp: AWSDateTime!
+}
+
+type Query {
+  getTodo(id: ID!): Todo
+  listTodos(userId: String!): [Todo]
+  searchTodos(userId: String!, query: String!): [Todo]
+  
+  getProject(id: ID!): Project
+  listProjects(ownerId: String!): [Project]
+
+  getNotifications(userId: String!): [Notification]
+}
+
+type Mutation {
+  createTodo(id: ID!, title: String!, description: String, status: String, priority: String, dueDate: AWSDateTime, startDate: AWSDateTime, endDate: AWSDateTime, projectId: String, assigneeId: String, userId: String!, attachments: [AttachmentInput!], labels: [String!], comments: [String!], recurrenceRule: String, recurrenceExceptions: [String!], originalTodoId: ID, reminderSetting: String): Todo
+  updateTodo(id: ID!, title: String, description: String, status: String, priority: String, dueDate: AWSDateTime, startDate: AWSDateTime, endDate: AWSDateTime, projectId: String, assigneeId: String, userId: String!, attachments: [AttachmentInput!], labels: [String!], comments: [String!], recurrenceRule: String, recurrenceExceptions: [String!], originalTodoId: ID, reminderSetting: String): Todo
+  deleteTodo(id: ID!, userId: String!): Todo
+  
+  createProject(id: ID!, name: String!, description: String, ownerId: String!, attachments: [AttachmentInput!]): Project
+  updateProject(id: ID!, name: String, description: String, ownerId: String!, attachments: [AttachmentInput!]): Project
+  deleteProject(id: ID!, ownerId: String!): Project
+
+  markNotificationRead(id: ID!, userId: String!): Notification
+  markNotificationUnread(id: ID!, userId: String!): Notification
+  markAllNotificationsRead(userId: String!): Boolean
+}
+
+type Subscription {
+  onTodoCreated(userId: String!): Todo @aws_subscribe(mutations: ["createTodo"])
+  onTodoUpdated(userId: String!): Todo @aws_subscribe(mutations: ["updateTodo"])
+  onTodoDeleted(userId: String!): Todo @aws_subscribe(mutations: ["deleteTodo"])
+  
+  onProjectCreated(ownerId: String!): Project @aws_subscribe(mutations: ["createProject"])
+  onProjectUpdated(ownerId: String!): Project @aws_subscribe(mutations: ["updateProject"])
+  onProjectDeleted(ownerId: String!): Project @aws_subscribe(mutations: ["deleteProject"])
+
+  onNotificationSent(userId: String!): Notification @aws_subscribe(mutations: ["markNotificationRead", "markNotificationUnread"])
+}
+
+schema {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}
