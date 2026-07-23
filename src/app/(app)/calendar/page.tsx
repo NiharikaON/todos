@@ -249,7 +249,7 @@ export default function CalendarPage() {
         className={`flex items-center justify-between w-full h-full px-2.5 py-1 rounded-lg text-xs font-bold text-white shadow-xs relative ${isOverdue ? 'ring-2 ring-red-500' : ''}`}
       >
         <span className="truncate">{eventInfo.event.title}</span>
-        {isOverdue && <AlertTriangle className="w-3.5 h-3.5 text-white shrink-0 ml-1" title="Overdue" />}
+        {isOverdue && <span title="Overdue"><AlertTriangle className="w-3.5 h-3.5 text-white shrink-0 ml-1" /></span>}
       </div>
     );
   };
