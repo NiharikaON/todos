@@ -105,7 +105,7 @@ export default function FilesPage() {
           await projectRepository.updateProject(targetProject.id, { attachments: updatedAttachments });
         }
       }
-      await storageRepository.removeFile(att.key);
+      await storageRepository.deleteFile(att.key);
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       toast.success("File deleted");

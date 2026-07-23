@@ -174,7 +174,7 @@ export default function DashboardPage() {
       let count = 0;
 
       for (const file of selectedFiles) {
-        const result = await storageRepository.uploadFile(file);
+        const result = await storageRepository.uploadFile(file, "Global", user?.id || "anonymous");
         const formattedSize = file.size > 1024 * 1024 
           ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` 
           : `${Math.round(file.size / 1024)} KB`;
