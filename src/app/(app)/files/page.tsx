@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { todoRepository, projectRepository, storageRepository } from "@/repositories";
 import { useAuth } from "@/providers/AuthProvider";
 import { Attachment, Task } from "@/types";
@@ -9,6 +9,7 @@ import { FileCard } from "@/components/FileCard";
 import { FilePreviewGallery } from "@/components/FilePreviewGallery";
 import { Search, Filter, Folder, Calendar } from "lucide-react";
 import toast from "react-hot-toast";
+import { downloadFileDirectly } from "@/utils/download";
 
 type FilterType = "ALL" | "IMAGES" | "DOCUMENTS" | "VIDEOS" | "AUDIO" | "ARCHIVES";
 
@@ -75,12 +76,41 @@ export default function FilesPage() {
     });
   }, [allFiles, searchQuery, activeFilter]);
 
+  const queryClient = useQueryClient();
+
   const handleDownload = async (fileKey: string) => {
     try {
+      const file = allFiles.find(f => f.key === fileKey);
+      const fileName = file ? file.name : fileKey.split('/').pop() || "download";
       const url = await storageRepository.getFileUrl(fileKey);
-      window.open(url, "_blank");
+      await downloadFileDirectly(url, fileName);
     } catch (error) {
       toast.error("Failed to download file");
+    }
+  };
+
+  const handleDeleteFile = async (att: Attachment & { entityType: "Task" | "Project"; taskTitle: string }) => {
+    if (!window.confirm(`Are you sure you want to delete "${att.name}"?`)) return;
+    try {
+      if (att.entityType === "Task") {
+        const targetTask = tasks.find(t => t.attachments?.some(a => a.key === att.key));
+        if (targetTask) {
+          const updatedAttachments = targetTask.attachments?.filter(a => a.key !== att.key) || [];
+          await todoRepository.updateTask(targetTask.id, { attachments: updatedAttachments });
+        }
+      } else {
+        const targetProject = projects.find(p => p.attachments?.some(a => a.key === att.key));
+        if (targetProject) {
+          const updatedAttachments = targetProject.attachments?.filter(a => a.key !== att.key) || [];
+          await projectRepository.updateProject(targetProject.id, { attachments: updatedAttachments });
+        }
+      }
+      await storageRepository.removeFile(att.key);
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      toast.success("File deleted");
+    } catch (err) {
+      toast.error("Failed to delete file");
     }
   };
 
@@ -156,6 +186,7 @@ export default function FilesPage() {
                 attachment={file}
                 onPreview={setPreviewAttachment}
                 onDownload={(att) => handleDownload(att.key)}
+                onDelete={(att) => handleDeleteFile(att as any)}
               />
               <div className="absolute top-2 right-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                  <span className="text-xs bg-black/50 text-white px-2 py-1 rounded truncate max-w-[120px]">

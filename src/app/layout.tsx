@@ -19,6 +19,8 @@ const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 import { AmplifyProvider } from "@/providers/AmplifyProvider";
 import { AuthProvider } from "@/providers/AuthProvider";
+import { SearchProvider } from "@/providers/SearchProvider";
+import { ActivityProvider } from "@/providers/ActivityProvider";
 import { BrowserNotificationProvider } from "@/providers/BrowserNotificationProvider";
 
 export default function RootLayout({
@@ -33,10 +35,14 @@ export default function RootLayout({
           <AmplifyProvider>
             <QueryProvider>
               <AuthProvider>
-                <BrowserNotificationProvider>
-                  {children}
-                  <Toaster position="top-right" />
-                </BrowserNotificationProvider>
+                <SearchProvider>
+                  <ActivityProvider>
+                    <BrowserNotificationProvider>
+                      {children}
+                      <Toaster position="top-right" />
+                    </BrowserNotificationProvider>
+                  </ActivityProvider>
+                </SearchProvider>
               </AuthProvider>
             </QueryProvider>
           </AmplifyProvider>

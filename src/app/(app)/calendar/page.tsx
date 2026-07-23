@@ -17,9 +17,12 @@ import { exportTasksToCSV, exportTasksToICS } from "@/utils/exportCalendar";
 import { MiniCalendar } from "@/components/calendar/MiniCalendar";
 import { WeeklyProductivityChart } from "@/components/calendar/WeeklyProductivityChart";
 
-function KpiCard({ title, value, icon: Icon, colorClass }: { title: string, value: number, icon: any, colorClass: string }) {
+function KpiCard({ title, value, icon: Icon, colorClass, onClick }: { title: string, value: number, icon: any, colorClass: string, onClick?: () => void }) {
   return (
-    <div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center gap-3 overflow-hidden">
+    <div 
+      onClick={onClick}
+      className={`bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center gap-3 overflow-hidden ${onClick ? 'cursor-pointer hover:border-purple-300 dark:hover:border-purple-700 hover:shadow-md active:scale-98 transition-all' : ''}`}
+    >
       <div className={`p-2.5 rounded-lg shrink-0 ${colorClass}`}>
         <Icon className="w-5 h-5 text-white" />
       </div>
@@ -93,20 +96,26 @@ export default function CalendarPage() {
     let completedCount = 0;
 
     tasks.forEach(task => {
+      const createdTime = task.createdAt ? new Date(task.createdAt).getTime() : 0;
+      const startTime = task.startDate ? new Date(task.startDate).getTime() : 0;
+      const dueTime = task.dueDate ? new Date(task.dueDate).getTime() : 0;
+
+      const isTaskToday = (createdTime >= startOfToday && createdTime <= endOfToday) ||
+                          (startTime >= startOfToday && startTime <= endOfToday) ||
+                          (dueTime >= startOfToday && dueTime <= endOfToday);
+
+      if (isTaskToday) {
+        todayCount++;
+      }
+
       if (task.status === "COMPLETED") {
         completedCount++;
-        return;
-      }
-      
-      const due = task.dueDate ? new Date(task.dueDate).getTime() : null;
-      if (!due) return;
-
-      if (due < startOfToday) {
-        overdueCount++;
-      } else if (due >= startOfToday && due <= endOfToday) {
-        todayCount++;
-      } else if (due > endOfToday) {
-        upcomingCount++;
+      } else {
+        if (dueTime && dueTime < startOfToday) {
+          overdueCount++;
+        } else if (dueTime && dueTime > endOfToday) {
+          upcomingCount++;
+        }
       }
     });
 
@@ -125,26 +134,24 @@ export default function CalendarPage() {
     const now = new Date().getTime();
 
     return filteredTasks.map((task) => {
-      let backgroundColor = "#8b5cf6"; // Purple (Todo/PENDING)
-      let borderColor = backgroundColor;
-
+      // 3 distinct natural colors by status:
+      // PENDING / Todo -> #3B82F6 (Blue)
+      // IN_PROGRESS    -> #8B5CF6 (Purple)
+      // COMPLETED      -> #10B981 (Emerald Green)
+      let backgroundColor = "#3b82f6";
       if (task.status === "COMPLETED") {
-        backgroundColor = "#9ca3af"; // Gray
+        backgroundColor = "#10b981";
       } else if (task.status === "IN_PROGRESS") {
-        backgroundColor = "#3b82f6"; // Blue
-      } else {
-        if (task.priority === "HIGH") backgroundColor = "#ef4444"; // Red
-        else if (task.priority === "MEDIUM") backgroundColor = "#f97316"; // Orange
-        else if (task.priority === "LOW") backgroundColor = "#22c55e"; // Green
+        backgroundColor = "#8b5cf6";
       }
 
-      borderColor = backgroundColor;
+      let borderColor = backgroundColor;
 
       const due = task.dueDate ? new Date(task.dueDate).getTime() : null;
-      const isOverdue = due && due < now && task.status !== "COMPLETED";
+      const isOverdue = due ? (due < now && task.status !== "COMPLETED") : false;
 
       if (isOverdue) {
-        borderColor = "#dc2626"; // Strong red border for overdue
+        borderColor = "#ef4444"; // Red border for overdue
       }
 
       const start = task.startDate ? new Date(task.startDate) : new Date(task.dueDate as string);
@@ -234,12 +241,15 @@ export default function CalendarPage() {
 
   const renderEventContent = (eventInfo: any) => {
     const isOverdue = eventInfo.event.extendedProps.isOverdue;
+    const bg = eventInfo.event.backgroundColor || "#3b82f6";
+
     return (
-      <div className={`flex flex-col w-full h-full p-0.5 overflow-hidden text-[11px] text-white ${isOverdue ? 'border-l-4 border-red-600' : ''}`}>
-        <div className="font-semibold flex items-center justify-between w-full truncate">
-          <span className="truncate">{eventInfo.event.title}</span>
-          {isOverdue && <AlertTriangle className="w-3 h-3 text-red-100 flex-shrink-0 ml-1" />}
-        </div>
+      <div 
+        style={{ backgroundColor: bg }}
+        className={`flex items-center justify-between w-full h-full px-2.5 py-1 rounded-lg text-xs font-bold text-white shadow-xs relative ${isOverdue ? 'ring-2 ring-red-500' : ''}`}
+      >
+        <span className="truncate">{eventInfo.event.title}</span>
+        {isOverdue && <AlertTriangle className="w-3.5 h-3.5 text-white shrink-0 ml-1" title="Overdue" />}
       </div>
     );
   };
@@ -254,13 +264,19 @@ export default function CalendarPage() {
 
   const allCategories = ["Personal", "Work", "Other", "Shopping", "Health", "Finance"];
 
+  const handleJumpToToday = () => {
+    if (calendarRef.current) {
+      calendarRef.current.getApi().today();
+    }
+  };
+
   return (
-    <div className="flex flex-col lg:flex-row gap-6 min-h-[calc(100vh-4rem)]">
+    <div className="w-full flex-1 flex flex-col lg:flex-row gap-6 items-start pb-6">
       {/* Left Sidebar */}
-      <aside className="w-full lg:w-72 flex-shrink-0 flex flex-col gap-6 bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm border border-gray-200 dark:border-gray-700">
+      <aside className="w-full lg:w-72 shrink-0 flex flex-col gap-5 bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-sm border border-gray-100 dark:border-slate-800">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100 flex items-center">
-            <CalendarIcon className="w-6 h-6 mr-2 text-indigo-600 dark:text-indigo-400" />
+          <h1 className="text-xl font-bold tracking-tight text-slate-800 dark:text-white flex items-center">
+            <CalendarIcon className="w-5 h-5 mr-2 text-purple-600 dark:text-purple-400" />
             Calendar
           </h1>
         </div>
@@ -373,10 +389,10 @@ export default function CalendarPage() {
 
         {/* KPI Cards */}
         <div className="grid grid-cols-2 2xl:grid-cols-4 gap-3">
-          <KpiCard title="Today" value={kpiStats.today} icon={CalendarIcon} colorClass="bg-blue-500" />
-          <KpiCard title="Upcoming" value={kpiStats.upcoming} icon={Clock} colorClass="bg-purple-500" />
-          <KpiCard title="Overdue" value={kpiStats.overdue} icon={AlertTriangle} colorClass="bg-red-500" />
-          <KpiCard title="Completed" value={kpiStats.completed} icon={CheckCircle} colorClass="bg-green-500" />
+          <KpiCard title="Today" value={kpiStats.today} icon={CalendarIcon} colorClass="bg-blue-500" onClick={handleJumpToToday} />
+          <KpiCard title="Upcoming" value={kpiStats.upcoming} icon={Clock} colorClass="bg-purple-500" onClick={() => setStatusFilter("PENDING")} />
+          <KpiCard title="Overdue" value={kpiStats.overdue} icon={AlertTriangle} colorClass="bg-red-500" onClick={() => setStatusFilter("ALL")} />
+          <KpiCard title="Completed" value={kpiStats.completed} icon={CheckCircle} colorClass="bg-green-500" onClick={() => setStatusFilter("COMPLETED")} />
         </div>
 
         {/* FullCalendar */}
@@ -388,7 +404,7 @@ export default function CalendarPage() {
             headerToolbar={{
               left: "prev,next today",
               center: "title",
-              right: "dayGridMonth,timeGridWeek,timeGridDay,listWeek",
+              right: "dayGridMonth,listWeek",
             }}
             events={events}
             editable={true}
@@ -403,9 +419,6 @@ export default function CalendarPage() {
             eventClassNames="cursor-pointer transition-opacity hover:opacity-90 rounded-sm"
           />
         </div>
-        
-        {/* Weekly Productivity Charts */}
-        <WeeklyProductivityChart tasks={tasks} />
       </div>
 
       <TodoDialog

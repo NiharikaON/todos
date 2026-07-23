@@ -5,6 +5,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Attachment } from "@/types";
 import { ChevronLeft, ChevronRight, X, ExternalLink, Download } from "lucide-react";
 import { storageRepository } from "@/repositories";
+import { downloadFileDirectly } from "@/utils/download";
 
 interface FilePreviewGalleryProps {
   isOpen: boolean;
@@ -83,13 +84,7 @@ export function FilePreviewGallery({ isOpen, onClose, attachments, initialAttach
 
   const handleDownload = () => {
     if (url) {
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = currentAttachment.name;
-      link.target = "_blank";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      downloadFileDirectly(url, currentAttachment.name);
     }
   };
 

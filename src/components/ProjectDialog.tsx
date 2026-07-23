@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { FileUpload } from "@/components/FileUpload";
 import { FileList } from "@/components/FileList";
 import { useFileUpload } from "@/hooks/useFileUpload";
+import { downloadFileDirectly } from "@/utils/download";
 
 const projectSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -136,10 +137,12 @@ export function ProjectDialog({ open, onOpenChange, projectToEdit }: ProjectDial
 
   const handleDownloadFile = async (fileKey: string) => {
     try {
+      const targetFile = files.find(f => f.key === fileKey);
+      const fileName = targetFile ? targetFile.name : fileKey.split('/').pop() || "download";
       const url = await storageRepository.getFileUrl(fileKey);
-      window.open(url, '_blank');
+      await downloadFileDirectly(url, fileName);
     } catch (error) {
-      toast.error("Failed to get download link");
+      toast.error("Failed to download file");
     }
   };
 

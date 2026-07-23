@@ -77,7 +77,7 @@ export function FileUpload({ onFilesSelected, progress, isUploading, disabled }:
           {isDragOver ? "Drop files here" : "Drag & drop files, or click to browse"}
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-          Max 10MB per file · Images, PDFs, Documents
+          Max 10MB per file · Images, PDFs, Documents, Audio, Video, Zip & Archives
         </p>
         <input
           ref={inputRef}

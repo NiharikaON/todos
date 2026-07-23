@@ -75,11 +75,14 @@ export function validateFile(file: File): FileValidationResult {
     };
   }
 
-  const isAccepted = ACCEPTED_FILE_TYPES.some((type) => file.type === type);
-  if (!isAccepted) {
+  const fileExt = "." + file.name.split(".").pop()?.toLowerCase();
+  const isTypeAccepted = ACCEPTED_FILE_TYPES.some((type) => file.type === type);
+  const isExtAccepted = ACCEPTED_EXTENSIONS.includes(fileExt as any);
+
+  if (!isTypeAccepted && !isExtAccepted) {
     return {
       valid: false,
-      error: `File type "${file.type || "unknown"}" is not supported`,
+      error: `File type "${file.name}" is not supported. Accepted: Images, Documents, PDFs, Audio, Video, Zip/Archives.`,
     };
   }
 

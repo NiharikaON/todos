@@ -1,20 +1,30 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/providers/AuthProvider";
 import { authRepository } from "@/repositories";
-import { Settings, Shield, Bell, Palette, Save } from "lucide-react";
+import { Settings, Shield, Bell, Palette, Save, User as UserIcon } from "lucide-react";
 import toast from "react-hot-toast";
 import { useTheme } from "next-themes";
 
-export default function SettingsPage() {
+function SettingsContent() {
   const { user } = useAuth();
   const { theme, setTheme } = useTheme();
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState("profile");
   
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab) {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
+
   const [notifications, setNotifications] = useState({
     email: true,
     push: false,
@@ -80,14 +90,7 @@ export default function SettingsPage() {
         <p className="mt-2 text-gray-600 dark:text-gray-400">Manage your account settings and preferences.</p>
       </div>
 
-      <Tabs defaultValue="profile" className="w-full">
-        <TabsList className="mb-6 grid grid-cols-4 h-auto p-1">
-          <TabsTrigger value="profile" className="py-2.5"><UserIcon /> Profile</TabsTrigger>
-          <TabsTrigger value="security" className="py-2.5"><Shield className="w-4 h-4 mr-2" /> Security</TabsTrigger>
-          <TabsTrigger value="notifications" className="py-2.5"><Bell className="w-4 h-4 mr-2" /> Notifications</TabsTrigger>
-          <TabsTrigger value="appearance" className="py-2.5"><Palette className="w-4 h-4 mr-2" /> Appearance</TabsTrigger>
-        </TabsList>
-        
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsContent value="profile">
           <Card>
             <CardHeader>
@@ -247,8 +250,10 @@ export default function SettingsPage() {
   );
 }
 
-function UserIcon() {
+export default function SettingsPage() {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 mr-2"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-  )
+    <Suspense fallback={<div className="p-8 text-center text-sm font-medium text-gray-500">Loading settings...</div>}>
+      <SettingsContent />
+    </Suspense>
+  );
 }

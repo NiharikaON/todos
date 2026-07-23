@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { FileUpload } from "@/components/FileUpload";
 import { FileList } from "@/components/FileList";
 import { useFileUpload } from "@/hooks/useFileUpload";
-import { AlertTriangle, Send } from "lucide-react";
+import { AlertTriangle, Send, Edit2, Trash2, Check, X } from "lucide-react";
 
 const todoSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -53,11 +53,33 @@ const toLocalISOString = (date: Date) => {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 };
 
+const getInitialStartDate = (initialDate?: string | null) => {
+  if (!initialDate) return toLocalISOString(new Date());
+  if (initialDate.length === 10) { // e.g. "YYYY-MM-DD" from FullCalendar month view
+    const today = new Date();
+    const [year, month, day] = initialDate.split("-").map(Number);
+    const localDate = new Date(year, month - 1, day, today.getHours(), today.getMinutes());
+    return toLocalISOString(localDate);
+  }
+  return toLocalISOString(new Date(initialDate));
+};
+
 export function TodoDialog({ open, onOpenChange, taskToEdit, initialDate, initialProjectId }: TodoDialogProps) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const isEditing = !!taskToEdit;
   const [newComment, setNewComment] = useState("");
+  const [editingCommentIndex, setEditingCommentIndex] = useState<number | null>(null);
+  const [editingCommentText, setEditingCommentText] = useState("");
+  const [localComments, setLocalComments] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (taskToEdit) {
+      setLocalComments(taskToEdit.comments || []);
+    } else {
+      setLocalComments([]);
+    }
+  }, [taskToEdit, open]);
 
   const {
     register,
@@ -73,7 +95,7 @@ export function TodoDialog({ open, onOpenChange, taskToEdit, initialDate, initia
       description: "",
       priority: "MEDIUM",
       status: "PENDING",
-      startDate: initialDate ? toLocalISOString(new Date(initialDate)) : "",
+      startDate: getInitialStartDate(initialDate),
       endDate: "",
       assigneeId: "",
       labels: "",
@@ -97,23 +119,35 @@ export function TodoDialog({ open, onOpenChange, taskToEdit, initialDate, initia
   });
 
   useEffect(() => {
-    if (open) {
-      if (taskToEdit) {
-        reset({
-          title: taskToEdit.title,
-          description: taskToEdit.description || "",
-          priority: taskToEdit.priority as "LOW" | "MEDIUM" | "HIGH",
-          status: taskToEdit.status as "PENDING" | "IN_PROGRESS" | "COMPLETED",
-          startDate: taskToEdit.startDate ? toLocalISOString(new Date(taskToEdit.startDate)) : "",
-          endDate: taskToEdit.endDate ? toLocalISOString(new Date(taskToEdit.endDate)) : "",
-          assigneeId: taskToEdit.assigneeId || "",
-          labels: taskToEdit.labels?.join(", ") || "",
-          category: taskToEdit.category || "Personal",
-          repeat: (taskToEdit.recurrenceRule ? taskToEdit.recurrenceRule.replace("FREQ=", "") as any : "NONE") || "NONE",
-          reminderSetting: taskToEdit.reminderSetting || "NONE",
-        });
-        
-        const initialFiles = taskToEdit.attachments ? taskToEdit.attachments.map(att => ({
+    if (taskToEdit) {
+      const formattedStartDate = taskToEdit.startDate
+        ? toLocalISOString(new Date(taskToEdit.startDate))
+        : "";
+      const formattedEndDate = taskToEdit.endDate
+        ? toLocalISOString(new Date(taskToEdit.endDate))
+        : (taskToEdit.dueDate ? toLocalISOString(new Date(taskToEdit.dueDate)) : "");
+
+      const rruleReverseMap: Record<string, "NONE" | "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY"> = {
+        "FREQ=DAILY": "DAILY",
+        "FREQ=WEEKLY": "WEEKLY",
+        "FREQ=MONTHLY": "MONTHLY",
+        "FREQ=YEARLY": "YEARLY",
+      };
+
+      reset({
+        title: taskToEdit.title,
+        description: taskToEdit.description || "",
+        priority: taskToEdit.priority as "LOW" | "MEDIUM" | "HIGH",
+        status: taskToEdit.status as "PENDING" | "IN_PROGRESS" | "COMPLETED",
+        startDate: formattedStartDate,
+        endDate: formattedEndDate,
+        assigneeId: taskToEdit.assigneeId || "",
+        labels: taskToEdit.labels ? taskToEdit.labels.join(", ") : "",
+        category: taskToEdit.category || "Personal",
+        repeat: rruleReverseMap[taskToEdit.recurrenceRule || ""] || "NONE",
+        reminderSetting: taskToEdit.reminderSetting || "NONE",
+      });
+      setInitialFiles(taskToEdit.attachments ? taskToEdit.attachments.map(att => ({
           id: att.key,
           key: att.key,
           name: att.name,
@@ -123,45 +157,37 @@ export function TodoDialog({ open, onOpenChange, taskToEdit, initialDate, initia
           entityType: "todo",
           entityId: taskToEdit.id,
           createdAt: taskToEdit.createdAt,
-        })) : [];
-        setInitialFiles(initialFiles);
-      } else {
-        const dateValue = initialDate ? toLocalISOString(new Date(initialDate)) : "";
-        reset({
-          title: "",
-          description: "",
-          priority: "MEDIUM",
-          status: "PENDING",
-          startDate: dateValue,
-          endDate: "",
-          assigneeId: "",
-          labels: "",
-          repeat: "NONE",
-        });
-        setInitialFiles([]);
-      }
-      setNewComment("");
+      })) : []);
+    } else {
+      reset({
+        title: "",
+        description: "",
+        priority: "MEDIUM",
+        status: "PENDING",
+        startDate: getInitialStartDate(initialDate),
+        endDate: "",
+        assigneeId: "",
+        labels: "",
+        category: "Personal",
+        repeat: "NONE",
+        reminderSetting: "NONE",
+      });
+      setInitialFiles([]);
     }
-  }, [open, taskToEdit, initialDate, reset, setInitialFiles]);
-
-  const startDate = watch("startDate");
-  const endDate = watch("endDate");
+  }, [taskToEdit, reset, open, initialDate, setInitialFiles]);
 
   const mutation = useMutation({
-    mutationFn: (data: TodoFormValues & { comments?: string[] }) => {
+    mutationFn: async (data: TodoFormValues) => {
+      const parsedLabels = data.labels
+        ? data.labels.split(",").map((l) => l.trim()).filter(Boolean)
+        : [];
+
       const attachments = files.length > 0 ? files.map(file => ({
         key: file.key,
         name: file.name,
         type: file.type,
         size: file.size,
       })) : undefined;
-
-      const parsedLabels = data.labels ? data.labels.split(",").map(l => l.trim()).filter(Boolean) : [];
-      if (data.category) {
-        if (!parsedLabels.includes(data.category)) {
-          parsedLabels.unshift(data.category);
-        }
-      }
 
       const rruleMap: Record<string, string | null> = {
         NONE: null,
@@ -184,8 +210,8 @@ export function TodoDialog({ open, onOpenChange, taskToEdit, initialDate, initia
         attachments,
         recurrenceRule: rruleMap[data.repeat || "NONE"],
         reminderSetting: data.reminderSetting !== "NONE" ? data.reminderSetting : undefined,
-        projectId: initialProjectId, // Pass the project ID if provided
-        ...(data.comments && { comments: data.comments })
+        projectId: initialProjectId,
+        comments: isEditing ? (taskToEdit?.comments || localComments) : localComments
       };
 
       if (isEditing && taskToEdit) {
@@ -235,17 +261,61 @@ export function TodoDialog({ open, onOpenChange, taskToEdit, initialDate, initia
   };
 
   const handleAddComment = () => {
-    if (!newComment.trim() || !taskToEdit) return;
-    const existingComments = taskToEdit.comments || [];
-    const updatedComments = [...existingComments, `${user?.name || 'User'}: ${newComment.trim()}`];
-    
-    // Instead of calling mutation directly, just optimistic update or real update
-    todoRepository.updateTask(taskToEdit.id, { comments: updatedComments }).then(() => {
-      queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      toast.success("Comment added");
+    if (!newComment.trim()) return;
+    const commentText = `${user?.name || 'User'}: ${newComment.trim()}`;
+
+    if (isEditing && taskToEdit) {
+      const existingComments = taskToEdit.comments || [];
+      const updatedComments = [...existingComments, commentText];
+      todoRepository.updateTask(taskToEdit.id, { comments: updatedComments }).then(() => {
+        queryClient.invalidateQueries({ queryKey: ["tasks"] });
+        toast.success("Comment added");
+        setNewComment("");
+      });
+    } else {
+      setLocalComments(prev => [...prev, commentText]);
       setNewComment("");
-      // Update local state if needed, but react-query will refetch and dialog should update if taskToEdit is bound to query
-    });
+    }
+  };
+
+  const handleDeleteComment = (indexToDelete: number) => {
+    if (isEditing && taskToEdit && taskToEdit.comments) {
+      const updatedComments = taskToEdit.comments.filter((_, idx) => idx !== indexToDelete);
+      todoRepository.updateTask(taskToEdit.id, { comments: updatedComments }).then(() => {
+        queryClient.invalidateQueries({ queryKey: ["tasks"] });
+        toast.success("Comment deleted");
+      });
+    } else {
+      setLocalComments(prev => prev.filter((_, idx) => idx !== indexToDelete));
+    }
+  };
+
+  const handleStartEditComment = (index: number, text: string) => {
+    setEditingCommentIndex(index);
+    const textContent = text.includes(":") ? text.split(":").slice(1).join(":").trim() : text;
+    setEditingCommentText(textContent);
+  };
+
+  const handleSaveEditComment = (indexToEdit: number) => {
+    if (!editingCommentText.trim()) return;
+    const activeList = isEditing && taskToEdit ? (taskToEdit.comments || localComments) : localComments;
+    const original = activeList[indexToEdit] || "";
+    const authorPrefix = original.includes(":") ? original.split(":")[0] : (user?.name || "User");
+    const updatedText = `${authorPrefix}: ${editingCommentText.trim()}`;
+
+    if (isEditing && taskToEdit) {
+      const updatedComments = activeList.map((c, idx) => idx === indexToEdit ? updatedText : c);
+      todoRepository.updateTask(taskToEdit.id, { comments: updatedComments }).then(() => {
+        queryClient.invalidateQueries({ queryKey: ["tasks"] });
+        toast.success("Comment updated");
+        setEditingCommentIndex(null);
+        setEditingCommentText("");
+      });
+    } else {
+      setLocalComments(prev => prev.map((c, idx) => idx === indexToEdit ? updatedText : c));
+      setEditingCommentIndex(null);
+      setEditingCommentText("");
+    }
   };
 
   const handleFilesSelected = async (fileList: FileList) => {
@@ -335,7 +405,7 @@ export function TodoDialog({ open, onOpenChange, taskToEdit, initialDate, initia
               </select>
             </div>
             
-            <div className="space-y-2 col-span-2 sm:col-span-1">
+            <div className="space-y-2 col-span-2">
               <Label htmlFor="repeat">Repeat</Label>
               <select
                 id="repeat"
@@ -347,24 +417,6 @@ export function TodoDialog({ open, onOpenChange, taskToEdit, initialDate, initia
                 <option value="WEEKLY">Weekly</option>
                 <option value="MONTHLY">Monthly</option>
                 <option value="YEARLY">Yearly</option>
-              </select>
-            </div>
-            
-            <div className="space-y-2 col-span-2 sm:col-span-1">
-              <Label htmlFor="reminderSetting">Reminder</Label>
-              <select
-                id="reminderSetting"
-                {...register("reminderSetting")}
-                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="NONE">No reminder</option>
-                <option value="0_MIN">At due time</option>
-                <option value="1_MIN">1 minute before</option>
-                <option value="5_MIN">5 minutes before</option>
-                <option value="15_MIN">15 minutes before</option>
-                <option value="30_MIN">30 minutes before</option>
-                <option value="1_HOUR">1 hour before</option>
-                <option value="1_DAY">1 day before</option>
               </select>
             </div>
 
@@ -473,40 +525,88 @@ export function TodoDialog({ open, onOpenChange, taskToEdit, initialDate, initia
           </DialogFooter>
         </form>
 
-        {/* Comments Section (Only in Edit mode) */}
-        {isEditing && taskToEdit && (
-          <div className="mt-4 pt-4 border-t">
-            <h3 className="text-sm font-semibold mb-3">Comments</h3>
-            <div className="space-y-2 mb-4 max-h-32 overflow-y-auto">
-              {taskToEdit.comments && taskToEdit.comments.length > 0 ? (
-                taskToEdit.comments.map((comment, index) => (
-                  <div key={index} className="text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded-md">
-                    {comment}
-                  </div>
-                ))
-              ) : (
-                <p className="text-xs text-gray-500">No comments yet.</p>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                placeholder="Add a comment..."
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-              <button
-                type="button"
-                onClick={handleAddComment}
-                disabled={!newComment.trim()}
-                className="px-3 py-1 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md disabled:opacity-50"
-              >
-                <Send className="w-4 h-4 text-gray-600 dark:text-gray-300" />
-              </button>
-            </div>
+        {/* Comments Section (Available in both Create and Edit modes) */}
+        <div className="mt-4 pt-4 border-t">
+          <h3 className="text-sm font-semibold mb-3">Comments</h3>
+          <div className="space-y-2 mb-4 max-h-40 overflow-y-auto pr-1">
+            {(isEditing && taskToEdit?.comments ? taskToEdit.comments : localComments).length > 0 ? (
+              (isEditing && taskToEdit?.comments ? taskToEdit.comments : localComments).map((comment, index) => (
+                <div key={index} className="flex items-center justify-between text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded-xl group transition-all">
+                  {editingCommentIndex === index ? (
+                    <div className="flex items-center gap-2 w-full">
+                      <input
+                        type="text"
+                        value={editingCommentText}
+                        onChange={(e) => setEditingCommentText(e.target.value)}
+                        className="flex-1 px-2.5 py-1 text-xs border border-purple-300 dark:border-purple-700 rounded-lg bg-white dark:bg-slate-900 focus:outline-none"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleSaveEditComment(index)}
+                        className="p-1 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 rounded-md"
+                        title="Save"
+                      >
+                        <Check className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingCommentIndex(null)}
+                        className="p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md"
+                        title="Cancel"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="text-slate-800 dark:text-slate-200 text-xs font-medium min-w-0 truncate pr-2">
+                        {comment}
+                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleStartEditComment(index, comment)}
+                          className="p-1 text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded-lg transition-colors cursor-pointer"
+                          title="Edit Comment"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteComment(index)}
+                          className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors cursor-pointer"
+                          title="Delete Comment"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))
+            ) : (
+              <p className="text-xs text-gray-500">No comments yet.</p>
+            )}
           </div>
-        )}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder="Add a comment..."
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+            <button
+              type="button"
+              onClick={handleAddComment}
+              disabled={!newComment.trim()}
+              className="px-3 py-1 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md disabled:opacity-50"
+            >
+              <Send className="w-4 h-4 text-gray-600 dark:text-gray-300" />
+            </button>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );

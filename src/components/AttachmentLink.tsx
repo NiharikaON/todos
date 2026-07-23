@@ -4,19 +4,29 @@ import { useState } from "react";
 import { getUrl } from "aws-amplify/storage";
 import { Paperclip, Loader2 } from "lucide-react";
 import { Attachment } from "@/types";
+import { useActivity } from "@/providers/ActivityProvider";
+
+import { downloadFileDirectly } from "@/utils/download";
 
 export function AttachmentLink({ attachment }: { attachment: Attachment }) {
   const [isLoading, setIsLoading] = useState(false);
+  const { logActivity } = useActivity();
 
   const handleDownload = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    logActivity({
+      id: attachment.key,
+      title: attachment.name,
+      type: "file",
+      subtitle: `${Math.round((attachment.size || 0) / 1024)} KB`,
+    });
     setIsLoading(true);
     try {
       const urlResult = await getUrl({ key: attachment.key });
-      window.open(urlResult.url.toString(), "_blank");
+      await downloadFileDirectly(urlResult.url.toString(), attachment.name);
     } catch (error) {
-      console.error("Error getting file URL:", error);
-      alert("Failed to open file.");
+      console.error("Error downloading file:", error);
+      alert("Failed to download file.");
     } finally {
       setIsLoading(false);
     }
