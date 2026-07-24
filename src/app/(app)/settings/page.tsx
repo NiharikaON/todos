@@ -200,44 +200,9 @@ function SettingsContent() {
         </div>
       </div>
 
-      {/* Main Grid: Left Navigation Sidebar + Right Content Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
-        {/* Left Sidebar Navigation */}
-        <div className="lg:col-span-4 xl:col-span-3 space-y-2">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 shadow-sm space-y-1">
-            {sidebarItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    setActiveTab(item.id);
-                    router.push(`/settings?tab=${item.id}`, { scroll: false });
-                  }}
-                  className={`w-full flex items-center text-left px-4 py-3.5 rounded-xl transition-all duration-200 group ${
-                    isActive
-                      ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20 font-bold"
-                      : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
-                  }`}
-                >
-                  <Icon className={`w-5 h-5 mr-3.5 shrink-0 transition-transform group-hover:scale-110 ${isActive ? "text-white" : "text-slate-400 dark:text-slate-500"}`} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm truncate">{item.label}</p>
-                    <p className={`text-xs truncate font-normal ${isActive ? "text-indigo-100" : "text-slate-400 dark:text-slate-500"}`}>
-                      {item.desc}
-                    </p>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Right Content Panel */}
-        <div className="lg:col-span-8 xl:col-span-9">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-sm">
+      {/* Main Content Section */}
+      <div className="w-full">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-sm">
             
             {/* ======================================================== */}
             {/* 1. PROFILE SECTION                                       */}
@@ -588,8 +553,6 @@ function SettingsContent() {
             )}
 
           </div>
-        </div>
-
       </div>
     </div>
   );

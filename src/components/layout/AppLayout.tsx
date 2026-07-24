@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/providers/AuthProvider";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { todoRepository } from "@/repositories";
 import { useSearch } from "@/providers/SearchProvider";
@@ -14,8 +14,6 @@ import {
   Bell, 
   Settings, 
   CalendarDays, 
-  Hexagon,
-  BarChart2,
   Search,
   ArrowLeft,
   User,
@@ -24,15 +22,25 @@ import {
   Clock,
   StickyNote,
   Folder,
-  ListChecks
+  ChevronDown,
+  ChevronRight
 } from "lucide-react";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { searchQuery, setSearchQuery } = useSearch();
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(true);
+
+  // Auto-expand Settings in sidebar if user is on settings or profile page
+  useEffect(() => {
+    if (pathname.startsWith("/settings") || pathname === "/profile") {
+      setIsSettingsOpen(true);
+    }
+  }, [pathname]);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -81,9 +89,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     { name: "Files", href: "/files", icon: Folder },
   ];
 
-  const generalItems = [
-    { name: "Profile", href: "/profile", icon: User },
-    { name: "Security", href: "/settings?tab=security", icon: Shield },
+  const currentTab = searchParams.get("tab") || "profile";
+
+  const settingsSubItems = [
+    { name: "Profile", href: "/settings?tab=profile", tab: "profile", icon: User },
+    { name: "Security", href: "/settings?tab=security", tab: "security", icon: Shield },
+    { name: "Theme", href: "/settings?tab=theme", tab: "theme", icon: Palette },
   ];
 
   return (
@@ -103,7 +114,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <h3 className="px-4 text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2">Menu</h3>
             <nav className="space-y-1">
               {menuItems.map((item) => {
-                const isActive = pathname === item.href || (item.name === "Task" && pathname === "/todos") || (item.name === "Analytics" && pathname.startsWith("/analytics"));
+                const isActive = pathname === item.href || (item.name === "Task" && pathname === "/todos");
                 const Icon = item.icon;
                 return (
                   <Link
@@ -133,24 +144,59 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="mb-6">
             <h3 className="px-4 text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2">General</h3>
             <nav className="space-y-1">
-              {generalItems.map((item) => {
-                const isActive = pathname === item.href;
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.name}
-                    href={item.href}
-                    className={`group flex items-center space-x-3 px-4 py-2.5 rounded-xl transition-all duration-200 ${
-                      isActive
-                        ? "bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 font-semibold"
-                        : "text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-gray-200"
-                    }`}
-                  >
-                    <Icon className="w-5 h-5" />
-                    <span>{item.name}</span>
-                  </Link>
-                );
-              })}
+              
+              {/* Collapsible Settings Menu Item */}
+              <div>
+                <button
+                  onClick={() => {
+                    setIsSettingsOpen(!isSettingsOpen);
+                    if (!pathname.startsWith("/settings")) {
+                      router.push("/settings?tab=profile");
+                    }
+                  }}
+                  className={`w-full group flex items-center justify-between px-4 py-2.5 rounded-xl transition-all duration-200 ${
+                    pathname.startsWith("/settings") || pathname === "/profile"
+                      ? "bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 font-semibold"
+                      : "text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-gray-200"
+                  }`}
+                >
+                  <div className="flex items-center space-x-3">
+                    <Settings className={`w-5 h-5 ${pathname.startsWith("/settings") ? "text-purple-600 dark:text-purple-400" : ""}`} />
+                    <span>Settings</span>
+                  </div>
+                  {isSettingsOpen ? (
+                    <ChevronDown className="w-4 h-4 text-gray-400" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-gray-400" />
+                  )}
+                </button>
+
+                {/* Collapsible Sub-Items (Profile, Security, Theme) */}
+                {isSettingsOpen && (
+                  <div className="ml-4 pl-3 border-l-2 border-purple-100 dark:border-slate-800 my-1 space-y-1">
+                    {settingsSubItems.map((sub) => {
+                      const isSubActive = (pathname.startsWith("/settings") || pathname === "/profile") && currentTab === sub.tab;
+                      const SubIcon = sub.icon;
+                      return (
+                        <Link
+                          key={sub.name}
+                          href={sub.href}
+                          className={`flex items-center space-x-3 px-3 py-2 rounded-xl text-xs transition-all duration-200 ${
+                            isSubActive
+                              ? "bg-purple-600 text-white font-bold shadow-xs"
+                              : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-gray-200 font-medium"
+                          }`}
+                        >
+                          <SubIcon className="w-4 h-4 shrink-0" />
+                          <span>{sub.name}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Logout Button */}
               <button
                 onClick={handleSignOut}
                 className="w-full group flex items-center space-x-3 px-4 py-2.5 rounded-xl transition-all duration-200 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-gray-200"
@@ -254,7 +300,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             
             <div className="flex items-center space-x-3 ml-2">
               <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm shrink-0">
-                {/* Avatar with fallback */}
                 <div className="w-full h-full bg-gradient-to-tr from-emerald-400 to-teal-500 flex items-center justify-center text-white font-bold">
                   {user?.name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'U'}
                 </div>
