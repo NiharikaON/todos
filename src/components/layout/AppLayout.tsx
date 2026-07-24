@@ -83,7 +83,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   const generalItems = [
     { name: "Profile", href: "/profile", icon: User },
-    { name: "Security", href: "/settings?tab=security", icon: Shield },
   ];
 
   return (
