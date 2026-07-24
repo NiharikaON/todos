@@ -242,27 +242,39 @@ export default function CalendarPage() {
   const renderEventContent = (eventInfo: any) => {
     const task = eventInfo.event.extendedProps?.task;
     const isRecurring = task?.recurrenceRule && task.recurrenceRule !== "NONE";
+    const now = new Date().getTime();
+
+    const targetEnd = task?.endDate 
+      ? new Date(task.endDate).getTime() 
+      : task?.dueDate 
+      ? new Date(task.dueDate).getTime() 
+      : 0;
+
     const eventDate = eventInfo.event.start ? new Date(eventInfo.event.start).getTime() : 0;
     const startOfToday = new Date().setHours(0, 0, 0, 0);
     const endOfToday = new Date().setHours(23, 59, 59, 999);
 
     const isTodayInstance = eventDate >= startOfToday && eventDate <= endOfToday;
-    const isPastInstance = eventDate < startOfToday;
     const isFutureInstance = eventDate > endOfToday;
+    const isTimePassed = targetEnd ? targetEnd < now : false;
 
-    let bg = eventInfo.event.backgroundColor || "#3b82f6";
-    if (isRecurring) {
-      if (isFutureInstance) {
-        bg = "#3b82f6"; // Royal Blue for tomorrow and future daily instances
-      } else if (isTodayInstance && task?.status === "COMPLETED") {
-        bg = "#10b981"; // Emerald Green when today's instance is completed
-      }
+    // Background Color Determination
+    let bg = "#3b82f6";
+    if (task?.status === "COMPLETED") {
+      bg = "#10b981"; // Emerald Green for Completed
+    } else if (task?.status === "IN_PROGRESS") {
+      bg = "#8b5cf6"; // Purple for In Progress
+    } else if (isRecurring && isFutureInstance) {
+      bg = "#3b82f6"; // Royal Blue for Future recurring instances
     }
 
-    // For recurring events, only instances on days BEFORE today are marked overdue
-    const isOverdue = isRecurring
-      ? (isPastInstance && task?.status !== "COMPLETED")
-      : eventInfo.event.extendedProps?.isOverdue;
+    // Overdue Determination:
+    // If task is not completed AND its scheduled end date/time has passed -> Overdue (Red ring & warning icon)
+    const isOverdue = task?.status !== "COMPLETED" && (
+      isRecurring 
+        ? (isTimePassed && eventDate <= endOfToday) 
+        : (eventInfo.event.extendedProps?.isOverdue || isTimePassed)
+    );
 
     return (
       <div 
