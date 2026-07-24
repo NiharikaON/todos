@@ -52,21 +52,24 @@ export class AmplifyAuthAdapter implements IAuthRepository {
     }
   }
 
-  async register(email: string, password: string): Promise<User> {
+  async register(email: string, password: string, name?: string): Promise<User> {
     try {
+      const userAttributes: Record<string, string> = { email };
+      if (name) {
+        userAttributes.name = name;
+      }
       const { isSignUpComplete, userId, nextStep } = await signUp({
         username: email,
         password,
         options: {
-          userAttributes: {
-            email,
-          },
+          userAttributes,
         },
       });
 
       return {
         id: userId || email,
         email,
+        name,
       };
     } catch (error) {
       throw this.mapError(error, "Failed to register");

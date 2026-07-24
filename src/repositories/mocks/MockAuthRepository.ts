@@ -26,10 +26,10 @@ export class MockAuthRepository implements IAuthRepository {
     });
   }
 
-  async register(email: string, password: string): Promise<User> {
+  async register(email: string, password: string, name?: string): Promise<User> {
     return new Promise((resolve) => {
       setTimeout(() => {
-        this.currentUser = { id: "mock-new-user", email, name: email.split('@')[0] };
+        this.currentUser = { id: "mock-new-user", email, name: name || email.split('@')[0] };
         if (typeof window !== "undefined") {
           localStorage.setItem("mock_session", JSON.stringify(this.currentUser));
         }

@@ -11,6 +11,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import toast from "react-hot-toast";
 
 const registerSchema = z.object({
+  name: z.string().min(2, { message: "Full name must be at least 2 characters" }),
   email: z.string().email({ message: "Invalid email address" }),
   password: z.string().min(8, { message: "Password must be at least 8 characters" }),
   confirmPassword: z.string(),
@@ -26,6 +27,7 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationCode, setVerificationCode] = useState("");
+  const [savedName, setSavedName] = useState("");
   const [savedEmail, setSavedEmail] = useState("");
   const [savedPassword, setSavedPassword] = useState("");
   const router = useRouter();
@@ -44,6 +46,7 @@ export default function RegisterPage() {
   } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
+      name: "",
       email: "",
       password: "",
       confirmPassword: ""
@@ -55,7 +58,8 @@ export default function RegisterPage() {
     setError(null);
 
     try {
-      await authRepository.register(data.email, data.password);
+      await authRepository.register(data.email, data.password, data.name);
+      setSavedName(data.name);
       setSavedEmail(data.email);
       setSavedPassword(data.password);
       setIsVerifying(true);
@@ -75,6 +79,13 @@ export default function RegisterPage() {
     try {
       await authRepository.confirmSignUp(savedEmail, verificationCode);
       await authRepository.login(savedEmail, savedPassword);
+      if (savedName) {
+        try {
+          await authRepository.updateProfile(savedName);
+        } catch (profileErr) {
+          console.warn("Profile name update error:", profileErr);
+        }
+      }
       await refreshUser();
       toast.success("Account verified and logged in!");
       router.push("/dashboard");
@@ -158,6 +169,27 @@ export default function RegisterPage() {
             </div>
 
             <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
+              <div>
+                <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                  Full Name
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-gray-400 dark:text-gray-500" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <input
+                    id="name"
+                    type="text"
+                    className="block w-full pl-10 rounded-xl border border-gray-200 bg-white/50 px-4 py-3 text-gray-900 placeholder-gray-400 focus:border-purple-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-purple-500/10 sm:text-sm dark:border-gray-700 dark:bg-gray-900/50 dark:text-white dark:focus:bg-gray-800 transition-all duration-200"
+                    placeholder="Enter your full name"
+                    {...register("name")}
+                  />
+                </div>
+                {errors.name && <p className="mt-1.5 text-sm text-red-500">{errors.name.message}</p>}
+              </div>
+
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                   Email address
