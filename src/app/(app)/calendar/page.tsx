@@ -240,7 +240,16 @@ export default function CalendarPage() {
   };
 
   const renderEventContent = (eventInfo: any) => {
-    const isOverdue = eventInfo.event.extendedProps.isOverdue;
+    const task = eventInfo.event.extendedProps?.task;
+    const isRecurring = task?.recurrenceRule && task.recurrenceRule !== "NONE";
+    const eventDate = eventInfo.event.start ? new Date(eventInfo.event.start).getTime() : 0;
+    const startOfToday = new Date().setHours(0, 0, 0, 0);
+
+    // For recurring events, only instances on days BEFORE today are marked overdue
+    const isOverdue = isRecurring
+      ? (eventDate < startOfToday && task?.status !== "COMPLETED")
+      : eventInfo.event.extendedProps?.isOverdue;
+
     const bg = eventInfo.event.backgroundColor || "#3b82f6";
 
     return (
