@@ -244,13 +244,25 @@ export default function CalendarPage() {
     const isRecurring = task?.recurrenceRule && task.recurrenceRule !== "NONE";
     const eventDate = eventInfo.event.start ? new Date(eventInfo.event.start).getTime() : 0;
     const startOfToday = new Date().setHours(0, 0, 0, 0);
+    const endOfToday = new Date().setHours(23, 59, 59, 999);
+
+    const isTodayInstance = eventDate >= startOfToday && eventDate <= endOfToday;
+    const isPastInstance = eventDate < startOfToday;
+    const isFutureInstance = eventDate > endOfToday;
+
+    let bg = eventInfo.event.backgroundColor || "#3b82f6";
+    if (isRecurring) {
+      if (isFutureInstance) {
+        bg = "#3b82f6"; // Royal Blue for tomorrow and future daily instances
+      } else if (isTodayInstance && task?.status === "COMPLETED") {
+        bg = "#10b981"; // Emerald Green when today's instance is completed
+      }
+    }
 
     // For recurring events, only instances on days BEFORE today are marked overdue
     const isOverdue = isRecurring
-      ? (eventDate < startOfToday && task?.status !== "COMPLETED")
+      ? (isPastInstance && task?.status !== "COMPLETED")
       : eventInfo.event.extendedProps?.isOverdue;
-
-    const bg = eventInfo.event.backgroundColor || "#3b82f6";
 
     return (
       <div 
