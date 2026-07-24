@@ -188,7 +188,7 @@ function SettingsContent() {
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6">
       {/* Sticky Header */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center">
             <Sparkles className="w-7 h-7 mr-3 text-indigo-600 dark:text-indigo-400" />
@@ -197,10 +197,6 @@ function SettingsContent() {
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             Manage your profile details, account security credentials, and theme preferences.
           </p>
-        </div>
-        <div className="inline-flex items-center px-3.5 py-1.5 rounded-full text-xs font-semibold bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800">
-          <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
-          Production Ready
         </div>
       </div>
 
@@ -310,14 +306,9 @@ function SettingsContent() {
 
                   {/* Email Address (Auto-filled from login/Cognito & Read-only) */}
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label htmlFor="email" className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                        Email Address
-                      </label>
-                      <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded">
-                        Auto-Filled / Read-Only
-                      </span>
-                    </div>
+                    <label htmlFor="email" className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                      Email Address
+                    </label>
                     <input
                       id="email"
                       type="email"
