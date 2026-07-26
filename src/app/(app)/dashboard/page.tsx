@@ -256,15 +256,8 @@ export default function DashboardPage() {
         </div>
         <div className="flex items-center space-x-3">
           <button 
-            onClick={() => setIsProjectDialogOpen(true)}
-            className="flex items-center space-x-2 bg-purple-500 hover:bg-purple-600 active:scale-95 text-white px-4 py-2 rounded-full text-[13px] font-semibold transition-all shadow-sm shadow-purple-500/20 cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Project</span>
-          </button>
-          <button 
             onClick={() => setIsAddFilesDialogOpen(true)}
-            className="flex items-center space-x-2 bg-white dark:bg-slate-800 border-2 border-purple-100 dark:border-slate-700 hover:border-purple-200 active:scale-95 text-purple-700 dark:text-purple-300 px-4 py-2 rounded-full text-[13px] font-semibold transition-all shadow-sm cursor-pointer"
+            className="flex items-center space-x-2 bg-purple-500 hover:bg-purple-600 active:scale-95 text-white px-4 py-2 rounded-full text-[13px] font-semibold transition-all shadow-sm shadow-purple-500/20 cursor-pointer"
           >
             <Paperclip className="w-4 h-4" />
             <span>Add Files</span>

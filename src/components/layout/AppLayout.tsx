@@ -22,6 +22,7 @@ import {
   Clock,
   StickyNote,
   Folder,
+  FolderKanban,
   ChevronDown,
   ChevronRight
 } from "lucide-react";
@@ -84,6 +85,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const menuItems = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "Task", href: "/todos", icon: CheckSquare, badge: tasks.length.toString() },
+    { name: "Projects", href: "/projects", icon: FolderKanban },
     { name: "Sticky Notes", href: "/notes", icon: StickyNote },
     { name: "Calendar", href: "/calendar", icon: CalendarDays },
     { name: "Files", href: "/files", icon: Folder },
