@@ -215,88 +215,94 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Top Header */}
         <header className="h-20 flex items-center justify-between px-6 md:px-10 flex-shrink-0 mt-4">
           <div className="flex-1 max-w-xl flex items-center space-x-3">
-            <button
-              onClick={() => router.back()}
-              title="Go Back"
-              className="w-10 h-10 rounded-full bg-white dark:bg-slate-900 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-slate-800 shadow-sm transition-all shrink-0 cursor-pointer active:scale-95 border border-gray-100 dark:border-slate-800"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            
-            <div className="relative group flex items-center flex-1">
-              <Search className="w-4 h-4 text-gray-400 absolute left-4 pointer-events-none group-focus-within:text-purple-500 transition-colors" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={handleSearchChange}
-                placeholder="Search tasks by name, priority, status..."
-                className="block w-full pl-11 pr-5 py-3 border-none bg-white dark:bg-slate-900 rounded-full text-sm text-slate-800 dark:text-slate-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm transition-all"
-              />
-            </div>
+            {pathname !== "/notes" && (
+              <>
+                <button
+                  onClick={() => router.back()}
+                  title="Go Back"
+                  className="w-10 h-10 rounded-full bg-white dark:bg-slate-900 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-slate-800 shadow-sm transition-all shrink-0 cursor-pointer active:scale-95 border border-gray-100 dark:border-slate-800"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+                
+                <div className="relative group flex items-center flex-1">
+                  <Search className="w-4 h-4 text-gray-400 absolute left-4 pointer-events-none group-focus-within:text-purple-500 transition-colors" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={handleSearchChange}
+                    placeholder="Search tasks by name, priority, status..."
+                    className="block w-full pl-11 pr-5 py-3 border-none bg-white dark:bg-slate-900 rounded-full text-sm text-slate-800 dark:text-slate-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm transition-all"
+                  />
+                </div>
+              </>
+            )}
           </div>
 
           <div className="flex items-center space-x-4 ml-6">
-            <div className="relative">
-              <button 
-                title="Notifications" 
-                onClick={() => setIsNotificationOpen(!isNotificationOpen)}
-                className="w-10 h-10 rounded-full bg-white dark:bg-slate-900 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 shadow-sm transition-all relative active:scale-95 border border-gray-100 dark:border-slate-800"
-              >
-                <Bell className="w-5 h-5" />
-                {notifications.length > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-xs">
-                    {notifications.length > 9 ? "9+" : notifications.length}
-                  </span>
-                )}
-              </button>
-
-              {/* Notification Popover Dropdown */}
-              {isNotificationOpen && (
-                <div className="absolute right-0 mt-3 w-80 sm:w-96 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-gray-100 dark:border-slate-800 z-50 p-4 space-y-3 animate-in fade-in zoom-in-95 duration-150">
-                  <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-slate-800">
-                    <h3 className="font-bold text-slate-900 dark:text-white text-sm flex items-center">
-                      <Bell className="w-4 h-4 mr-2 text-purple-600 dark:text-purple-400" />
-                      Notifications & Reminders
-                    </h3>
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300">
-                      {notifications.length} active
+            {pathname !== "/notes" && (
+              <div className="relative">
+                <button 
+                  title="Notifications" 
+                  onClick={() => setIsNotificationOpen(!isNotificationOpen)}
+                  className="w-10 h-10 rounded-full bg-white dark:bg-slate-900 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 shadow-sm transition-all relative active:scale-95 border border-gray-100 dark:border-slate-800"
+                >
+                  <Bell className="w-5 h-5" />
+                  {notifications.length > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-xs">
+                      {notifications.length > 9 ? "9+" : notifications.length}
                     </span>
-                  </div>
+                  )}
+                </button>
 
-                  <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
-                    {notifications.length === 0 ? (
-                      <div className="text-center py-6 text-slate-400 dark:text-slate-500 text-xs font-medium">
-                        🎉 All caught up! No pending reminders.
-                      </div>
-                    ) : (
-                      notifications.map((item) => (
-                        <div 
-                          key={item.id}
-                          onClick={() => {
-                            setIsNotificationOpen(false);
-                            router.push("/todos");
-                          }}
-                          className="p-2.5 rounded-xl border border-gray-100 dark:border-slate-800 hover:bg-purple-50/50 dark:hover:bg-purple-950/20 transition-all cursor-pointer flex items-start justify-between gap-2 group"
-                        >
-                          <div className="min-w-0">
-                            <p className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors truncate">
-                              {item.title}
-                            </p>
-                            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 flex items-center">
-                              <Clock className="w-3 h-3 mr-1 shrink-0" />
-                              {new Date(item.dateStr!).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                            </p>
-                          </div>
-                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${item.isOverdue ? 'bg-red-100 text-red-600 dark:bg-red-950/40 dark:text-red-400' : 'bg-purple-100 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400'}`}>
-                            {item.isOverdue ? "Overdue" : item.priority || "Reminder"}
-                          </span>
+                {/* Notification Popover Dropdown */}
+                {isNotificationOpen && (
+                  <div className="absolute right-0 mt-3 w-80 sm:w-96 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-gray-100 dark:border-slate-800 z-50 p-4 space-y-3 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-slate-800">
+                      <h3 className="font-bold text-slate-900 dark:text-white text-sm flex items-center">
+                        <Bell className="w-4 h-4 mr-2 text-purple-600 dark:text-purple-400" />
+                        Notifications & Reminders
+                      </h3>
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300">
+                        {notifications.length} active
+                      </span>
+                    </div>
+
+                    <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                      {notifications.length === 0 ? (
+                        <div className="text-center py-6 text-slate-400 dark:text-slate-500 text-xs font-medium">
+                          🎉 All caught up! No pending reminders.
                         </div>
-                      ))
-                    )}
+                      ) : (
+                        notifications.map((item) => (
+                          <div 
+                            key={item.id}
+                            onClick={() => {
+                              setIsNotificationOpen(false);
+                              router.push("/todos");
+                            }}
+                            className="p-2.5 rounded-xl border border-gray-100 dark:border-slate-800 hover:bg-purple-50/50 dark:hover:bg-purple-950/20 transition-all cursor-pointer flex items-start justify-between gap-2 group"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors truncate">
+                                {item.title}
+                              </p>
+                              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 flex items-center">
+                                <Clock className="w-3 h-3 mr-1 shrink-0" />
+                                {new Date(item.dateStr!).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </p>
+                            </div>
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${item.isOverdue ? 'bg-red-100 text-red-600 dark:bg-red-950/40 dark:text-red-400' : 'bg-purple-100 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400'}`}>
+                              {item.isOverdue ? "Overdue" : item.priority || "Reminder"}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
             
             <div className="flex items-center space-x-3 ml-2">
               <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm shrink-0">
@@ -306,7 +312,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
               <div className="hidden sm:flex flex-col text-sm max-w-[240px]">
                 <p className="font-bold text-gray-900 dark:text-white leading-tight truncate">{user?.name || 'User'}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 truncate leading-tight mt-0.5">{user?.email}</p>
+                {pathname !== "/notes" && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate leading-tight mt-0.5">{user?.email}</p>
+                )}
               </div>
             </div>
           </div>
