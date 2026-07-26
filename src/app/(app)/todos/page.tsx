@@ -141,10 +141,6 @@ function TodosContent() {
       matchesStatus = task.status.toUpperCase() === "IN_PROGRESS";
     } else if (filterStatus === "PENDING") {
       matchesStatus = task.status.toUpperCase() === "PENDING" || (task.status.toUpperCase() !== "COMPLETED" && task.status.toUpperCase() !== "IN_PROGRESS");
-    } else if (filterStatus === "OVERDUE") {
-      const now = new Date().getTime();
-      const targetDate = task.endDate || task.dueDate || task.startDate;
-      matchesStatus = task.status !== "COMPLETED" && !!targetDate && new Date(targetDate).getTime() < now;
     }
 
     return matchesSearch && matchesPriority && matchesStatus;
@@ -236,7 +232,6 @@ function TodosContent() {
                 <option value="PENDING">Pending Tasks</option>
                 <option value="IN_PROGRESS">In Progress</option>
                 <option value="COMPLETED">Completed Tasks</option>
-                <option value="OVERDUE">Overdue Tasks</option>
               </select>
             </div>
 

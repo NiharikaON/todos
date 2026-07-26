@@ -1,112 +1,46 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { todoRepository, projectRepository, storageRepository } from "@/repositories";
 import { useAuth } from "@/providers/AuthProvider";
 import { 
   CheckCircle2, 
   Clock, 
   Activity,
+  ArrowRight,
   Plus,
+  Download,
+  ArrowUpRight,
   FolderKanban,
   Layers,
   AlertCircle,
-  AlertTriangle,
+  Upload,
+  UserPlus,
   FileText,
   X,
+  Eye,
   Paperclip,
   Image,
   Music,
   Video,
   UploadCloud,
   Loader2,
+  FileSpreadsheet,
   Archive,
   Folder,
   Edit2,
-  Trash2,
-  CalendarDays,
-  Circle,
-  UserPlus
+  Trash2
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DashboardChart } from "@/components/DashboardChart";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProjectDialog } from "@/components/ProjectDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Project, Task } from "@/types";
+import { Project } from "@/types";
 import { useActivity } from "@/providers/ActivityProvider";
 import toast from "react-hot-toast";
 import Link from "next/link";
-
-function MiniCalendarPreview({ tasks }: { tasks: Task[] }) {
-  const [currentDate] = useState(new Date());
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth();
-
-  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-  const daysOfWeek = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-
-  const firstDayIndex = new Date(year, month, 1).getDay();
-  const totalDays = new Date(year, month + 1, 0).getDate();
-
-  const calendarDays = [];
-  for (let i = 0; i < firstDayIndex; i++) {
-    calendarDays.push(null);
-  }
-  for (let i = 1; i <= totalDays; i++) {
-    calendarDays.push(i);
-  }
-
-  const todayDate = currentDate.getDate();
-
-  return (
-    <Card className="bg-white dark:bg-slate-900 border-none rounded-3xl shadow-sm overflow-hidden">
-      <CardHeader className="px-5 py-3 border-b border-gray-50 dark:border-slate-800 flex flex-row items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <CalendarDays className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-          <CardTitle className="text-[14px] font-bold text-slate-800 dark:text-white leading-none">
-            {monthNames[month]} {year}
-          </CardTitle>
-        </div>
-        <Link href="/calendar" className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 hover:underline">
-          Full Calendar →
-        </Link>
-      </CardHeader>
-      <CardContent className="p-4">
-        <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-bold text-gray-400 mb-2">
-          {daysOfWeek.map(day => <div key={day}>{day}</div>)}
-        </div>
-        <div className="grid grid-cols-7 gap-1 text-center text-xs">
-          {calendarDays.map((day, idx) => {
-            if (day === null) return <div key={idx} className="h-7" />;
-            const isToday = day === todayDate;
-            const hasTask = tasks.some(t => {
-              const dateStr = t.endDate || t.dueDate || t.startDate;
-              if (!dateStr) return false;
-              const d = new Date(dateStr);
-              return d.getDate() === day && d.getMonth() === month && d.getFullYear() === year;
-            });
-
-            return (
-              <div
-                key={idx}
-                className={`h-7 rounded-lg flex flex-col items-center justify-center font-semibold relative ${
-                  isToday
-                    ? "bg-purple-600 text-white shadow-xs font-bold"
-                    : "text-slate-700 dark:text-slate-300 hover:bg-purple-50 dark:hover:bg-slate-800"
-                }`}
-              >
-                <span>{day}</span>
-                {hasTask && !isToday && (
-                  <span className="w-1 h-1 rounded-full bg-purple-500 absolute bottom-1" />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+import { useMutation } from "@tanstack/react-query";
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -130,28 +64,14 @@ export default function DashboardPage() {
   const [memberEmail, setMemberEmail] = useState("");
   const [memberRole, setMemberRole] = useState("Developer");
 
-  const { data: tasks = [], isLoading: tasksLoading } = useQuery({
+  const { data: tasks, isLoading: tasksLoading } = useQuery({
     queryKey: ["tasks"],
     queryFn: () => todoRepository.getTasks(),
   });
 
-  const { data: projects = [], isLoading: projectsLoading } = useQuery({
+  const { data: projects, isLoading: projectsLoading } = useQuery({
     queryKey: ["projects"],
     queryFn: () => projectRepository.getProjects(),
-  });
-
-  // Task Toggle Status Mutation
-  const toggleMutation = useMutation({
-    mutationFn: (task: { id: string, status: string }) => {
-      const newStatus = task.status === "COMPLETED" ? "PENDING" : "COMPLETED";
-      return todoRepository.updateTask(task.id, { status: newStatus });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tasks"] });
-    },
-    onError: () => {
-      toast.error("Failed to update task status");
-    }
   });
 
   // Project Actions (Edit & Delete)
@@ -187,6 +107,57 @@ export default function DashboardPage() {
     }
   };
 
+  // Traverse dropped directory tree recursively
+  const traverseFileTree = (entry: any, fileList: File[]): Promise<void> => {
+    return new Promise((resolve) => {
+      if (entry.isFile) {
+        entry.file((file: File) => {
+          fileList.push(file);
+          resolve();
+        });
+      } else if (entry.isDirectory) {
+        const dirReader = entry.createReader();
+        dirReader.readEntries(async (entries: any[]) => {
+          for (const childEntry of entries) {
+            await traverseFileTree(childEntry, fileList);
+          }
+          resolve();
+        });
+      } else {
+        resolve();
+      }
+    });
+  };
+
+  // Handle Drag & Drop of Files and Folders
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const items = e.dataTransfer.items;
+    const extractedFiles: File[] = [];
+
+    if (items) {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === "file") {
+          const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+          if (entry) {
+            await traverseFileTree(entry, extractedFiles);
+          } else {
+            const file = item.getAsFile();
+            if (file) extractedFiles.push(file);
+          }
+        }
+      }
+    } else if (e.dataTransfer.files) {
+      extractedFiles.push(...Array.from(e.dataTransfer.files));
+    }
+
+    if (extractedFiles.length > 0) {
+      setSelectedFiles((prev) => [...prev, ...extractedFiles]);
+    }
+  };
+
   const handleRemoveFile = (index: number) => {
     setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
   };
@@ -210,10 +181,15 @@ export default function DashboardPage() {
         
         let category = "Document";
         const fileExt = file.name.split('.').pop()?.toLowerCase();
-        if (["zip", "rar", "7z", "tar", "gz", "bz2"].includes(fileExt || "")) category = "Zip / Archive";
-        else if (file.type.startsWith("image/")) category = "Image";
-        else if (file.type.startsWith("audio/")) category = "Audio";
-        else if (file.type.startsWith("video/")) category = "Video";
+        if (["zip", "rar", "7z", "tar", "gz", "bz2"].includes(fileExt || "") || file.type.includes("zip") || file.type.includes("compressed") || file.type.includes("tar")) {
+          category = "Zip / Archive";
+        } else if (file.type.startsWith("image/")) {
+          category = "Image";
+        } else if (file.type.startsWith("audio/")) {
+          category = "Audio";
+        } else if (file.type.startsWith("video/")) {
+          category = "Video";
+        }
 
         logActivity({
           id: result.key || file.name,
@@ -236,6 +212,20 @@ export default function DashboardPage() {
     }
   };
 
+  // Handle Add Member Submit
+  const handleAddMemberSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!memberEmail.trim()) {
+      toast.error("Please enter a valid email address.");
+      return;
+    }
+
+    toast.success(`Invitation sent to ${memberEmail} (${memberRole})!`);
+    setMemberName("");
+    setMemberEmail("");
+    setIsAddMemberDialogOpen(false);
+  };
+
   if (tasksLoading || projectsLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -247,30 +237,21 @@ export default function DashboardPage() {
     );
   }
 
-  // Task Statistics
-  const totalTasks = tasks.length;
-  const completedTasks = tasks.filter(t => t.status === "COMPLETED").length;
-  const inProgressTasks = tasks.filter(t => t.status === "IN_PROGRESS").length;
-  const pendingTasks = tasks.filter(t => t.status !== "COMPLETED" && t.status !== "IN_PROGRESS").length;
-  
-  const nowTime = new Date().getTime();
-  const overdueTasks = tasks.filter(t => {
-    if (t.status === "COMPLETED") return false;
-    const target = t.endDate || t.dueDate || t.startDate;
-    return target ? new Date(target).getTime() < nowTime : false;
-  }).length;
+  const totalTasks = tasks?.length || 0;
+  const completedTasks = tasks?.filter(t => t.status === "COMPLETED").length || 0;
+  const inProgressTasks = tasks?.filter(t => t.status === "IN_PROGRESS").length || 0;
+  const pendingTasks = tasks?.filter(t => t.status !== "COMPLETED" && t.status !== "IN_PROGRESS").length || 0;
 
   return (
     <div className="max-w-7xl mx-auto w-full flex-1 flex flex-col gap-4 pb-2 min-h-0">
-      
-      {/* Header Row */}
+      {/* Header row */}
       <div className="shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-sm">
         <div>
-          <h1 className="text-2xl font-black text-purple-900 dark:text-white tracking-tight leading-none">
-            Dashboard Overview
+          <h1 className="text-3xl font-black text-purple-900 dark:text-white tracking-tight leading-none">
+            Dashboard
           </h1>
           <p className="text-gray-500 dark:text-gray-400 font-medium text-[13px] mt-1">
-            Track your tasks, projects, upcoming schedules, and recent activities.
+            Plan, prioritize, and accomplish your tasks with ease.
           </p>
         </div>
         <div className="flex items-center space-x-3">
@@ -284,144 +265,73 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 5 Stat Cards Row */}
-      <div className="shrink-0 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
-        {/* Total Tasks */}
-        <Link href="/todos?status=ALL" className="block">
-          <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-gray-800 p-4 rounded-2xl shadow-xs hover:shadow-md transition-all flex items-center gap-3.5 group">
-            <div className="w-11 h-11 bg-gray-100 dark:bg-gray-800 rounded-xl flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+      {/* Stats Row */}
+      <div className="shrink-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 h-[84px]">
+        {/* Total */}
+        <Link href="/todos?status=ALL" className="block h-full">
+          <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-gray-800 p-4 rounded-xl shadow-sm hover:shadow-md transition-shadow h-full flex items-center gap-4">
+            <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-xl flex items-center justify-center shrink-0">
               <Layers className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </div>
             <div>
-              <div className="text-xl font-bold text-slate-800 dark:text-white leading-none">{totalTasks}</div>
+              <div className="text-lg font-bold text-slate-800 dark:text-white leading-none">{totalTasks}</div>
               <div className="text-xs text-gray-500 font-medium mt-1">Total Tasks</div>
             </div>
           </div>
         </Link>
         
         {/* Completed */}
-        <Link href="/todos?status=COMPLETED" className="block">
-          <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-gray-800 p-4 rounded-2xl shadow-xs hover:shadow-md transition-all flex items-center gap-3.5 group">
-            <div className="w-11 h-11 bg-green-50 dark:bg-green-900/30 rounded-xl flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+        <Link href="/todos?status=COMPLETED" className="block h-full">
+          <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-gray-800 p-4 rounded-xl shadow-sm hover:shadow-md transition-shadow h-full flex items-center gap-4">
+            <div className="w-12 h-12 bg-green-50 dark:bg-green-900/30 rounded-xl flex items-center justify-center shrink-0">
               <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
             </div>
             <div>
-              <div className="text-xl font-bold text-green-600 dark:text-green-400 leading-none">{completedTasks}</div>
+              <div className="text-lg font-bold text-green-600 dark:text-green-400 leading-none">{completedTasks}</div>
               <div className="text-xs text-gray-500 font-medium mt-1">Completed</div>
             </div>
           </div>
         </Link>
 
         {/* In Progress */}
-        <Link href="/todos?status=IN_PROGRESS" className="block">
-          <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-gray-800 p-4 rounded-2xl shadow-xs hover:shadow-md transition-all flex items-center gap-3.5 group">
-            <div className="w-11 h-11 bg-blue-50 dark:bg-blue-900/30 rounded-xl flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+        <Link href="/todos?status=IN_PROGRESS" className="block h-full">
+          <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-gray-800 p-4 rounded-xl shadow-sm hover:shadow-md transition-shadow h-full flex items-center gap-4">
+            <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/30 rounded-xl flex items-center justify-center shrink-0">
               <Clock className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
-              <div className="text-xl font-bold text-blue-600 dark:text-blue-400 leading-none">{inProgressTasks}</div>
+              <div className="text-lg font-bold text-blue-600 dark:text-blue-400 leading-none">{inProgressTasks}</div>
               <div className="text-xs text-gray-500 font-medium mt-1">In Progress</div>
             </div>
           </div>
         </Link>
 
         {/* Pending */}
-        <Link href="/todos?status=PENDING" className="block">
-          <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-gray-800 p-4 rounded-2xl shadow-xs hover:shadow-md transition-all flex items-center gap-3.5 group">
-            <div className="w-11 h-11 bg-amber-50 dark:bg-amber-900/30 rounded-xl flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+        <Link href="/todos?status=PENDING" className="block h-full">
+          <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-gray-800 p-4 rounded-xl shadow-sm hover:shadow-md transition-shadow h-full flex items-center gap-4">
+            <div className="w-12 h-12 bg-amber-50 dark:bg-amber-900/30 rounded-xl flex items-center justify-center shrink-0">
               <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
             </div>
             <div>
-              <div className="text-xl font-bold text-amber-600 dark:text-amber-400 leading-none">{pendingTasks}</div>
+              <div className="text-lg font-bold text-amber-600 dark:text-amber-400 leading-none">{pendingTasks}</div>
               <div className="text-xs text-gray-500 font-medium mt-1">Pending</div>
-            </div>
-          </div>
-        </Link>
-
-        {/* Overdue */}
-        <Link href="/todos?status=OVERDUE" className="block">
-          <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-gray-800 p-4 rounded-2xl shadow-xs hover:shadow-md transition-all flex items-center gap-3.5 group">
-            <div className="w-11 h-11 bg-rose-50 dark:bg-rose-900/30 rounded-xl flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-              <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400" />
-            </div>
-            <div>
-              <div className="text-xl font-bold text-rose-600 dark:text-rose-400 leading-none">{overdueTasks}</div>
-              <div className="text-xs text-gray-500 font-medium mt-1">Overdue</div>
             </div>
           </div>
         </Link>
       </div>
 
-      {/* Main Sections Grid */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 min-h-0">
-        
-        {/* Left Column (8 cols): Upcoming Tasks & Recent Activity */}
-        <div className="lg:col-span-7 flex flex-col gap-4 min-h-0">
-          
-          {/* Upcoming Tasks Section */}
+      {/* Main Grid */}
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-0">
+        {/* Left Column: Recent Activity */}
+        <div className="lg:col-span-2 flex flex-col gap-4 min-h-0 h-full">
+          {/* Recent Activity Section */}
           <Card className="bg-white dark:bg-slate-900 border-none rounded-3xl shadow-sm overflow-hidden shrink-0">
-            <CardHeader className="px-5 py-3.5 border-b border-gray-50 dark:border-slate-800 flex flex-row items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Clock className="w-4 h-4 text-purple-600" />
-                <CardTitle className="text-[15px] font-bold text-slate-800 dark:text-white leading-none">
-                  Upcoming Tasks
-                </CardTitle>
-              </div>
-              <Link href="/todos" className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline">
-                View All →
-              </Link>
+            <CardHeader className="px-5 py-3">
+              <CardTitle className="text-[15px] font-bold text-slate-800 dark:text-white leading-none">
+                Recent Activity
+              </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="divide-y divide-gray-50 dark:divide-slate-800 max-h-56 overflow-y-auto no-scrollbar">
-                {tasks.filter(t => t.status !== "COMPLETED").length > 0 ? (
-                  tasks
-                    .filter(t => t.status !== "COMPLETED")
-                    .slice(0, 4)
-                    .map((task) => (
-                      <div key={task.id} className="p-3 px-5 flex items-center justify-between hover:bg-purple-50/40 dark:hover:bg-slate-800/40 transition-colors">
-                        <div className="flex items-center space-x-3 min-w-0">
-                          <button
-                            onClick={() => toggleMutation.mutate({ id: task.id, status: task.status })}
-                            className="text-slate-400 hover:text-purple-600 shrink-0 transition-colors"
-                          >
-                            <Circle className="w-4 h-4" />
-                          </button>
-                          <div className="min-w-0">
-                            <p className="text-xs font-bold text-slate-800 dark:text-white truncate">{task.title}</p>
-                            <p className="text-[10px] text-slate-400 mt-0.5 truncate">
-                              {task.category || 'General'} • {task.endDate || task.dueDate ? new Date(task.endDate || task.dueDate!).toLocaleDateString() : 'No date'}
-                            </p>
-                          </div>
-                        </div>
-                        <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold shrink-0 ${
-                          task.priority === "HIGH" ? "bg-rose-100 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400" :
-                          task.priority === "MEDIUM" ? "bg-amber-100 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400" :
-                          "bg-emerald-100 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
-                        }`}>
-                          {task.priority}
-                        </span>
-                      </div>
-                    ))
-                ) : (
-                  <div className="p-6 text-center text-xs font-medium text-gray-400">
-                    🎉 No upcoming tasks! All tasks completed.
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Recent Activity Section */}
-          <Card className="bg-white dark:bg-slate-900 border-none rounded-3xl shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
-            <CardHeader className="px-5 py-3 border-b border-gray-50 dark:border-slate-800 shrink-0">
-              <div className="flex items-center space-x-2">
-                <Activity className="w-4 h-4 text-purple-600" />
-                <CardTitle className="text-[15px] font-bold text-slate-800 dark:text-white leading-none">
-                  Recent Activity
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 flex-1 overflow-y-auto no-scrollbar">
               <div className="divide-y divide-gray-50 dark:divide-slate-800">
                 {activities.filter(a => !a.userId || a.userId === (user?.id || user?.email || "guest")).length > 0 ? (
                   activities
@@ -435,7 +345,7 @@ export default function DashboardPage() {
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-3">
-                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-xs ${
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-sm ${
                               act.type === 'project' 
                                 ? 'bg-purple-100 text-purple-600' 
                                 : act.type === 'file' 
@@ -445,17 +355,17 @@ export default function DashboardPage() {
                                 : 'bg-blue-100 text-blue-600'
                             }`}>
                               {act.type === 'project' ? (
-                                <FolderKanban className="w-3.5 h-3.5" />
+                                <FolderKanban className="w-4 h-4" />
                               ) : act.type === 'file' ? (
-                                <FileText className="w-3.5 h-3.5" />
+                                <FileText className="w-4 h-4" />
                               ) : act.status === 'COMPLETED' ? (
-                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <CheckCircle2 className="w-4 h-4" />
                               ) : (
-                                <Clock className="w-3.5 h-3.5" />
+                                <Clock className="w-4 h-4" />
                               )}
                             </div>
                             <div className="min-w-0">
-                              <p className="text-xs font-bold text-slate-800 dark:text-white group-hover:text-purple-600 transition-colors leading-tight truncate">
+                              <p className="text-[13px] font-bold text-slate-800 dark:text-white group-hover:text-purple-600 transition-colors leading-tight truncate">
                                 {act.title}
                               </p>
                               <p className="text-[10px] font-semibold text-slate-400 mt-0.5 truncate">
@@ -481,8 +391,8 @@ export default function DashboardPage() {
                       </Link>
                     ))
                 ) : (
-                  <div className="p-6 text-center text-xs font-medium text-gray-400">
-                    No activity recorded yet.
+                  <div className="p-8 text-center text-xs font-medium text-gray-400">
+                    No activity yet.
                   </div>
                 )}
               </div>
@@ -490,38 +400,30 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* Right Column (5 cols): Mini Calendar Preview & Upcoming Projects */}
-        <div className="lg:col-span-5 flex flex-col gap-4 min-h-0">
-          
-          {/* Calendar Preview Widget */}
-          <MiniCalendarPreview tasks={tasks} />
-
-          {/* Upcoming Projects Card Widget */}
-          <Card className="bg-white dark:bg-slate-900 border-none rounded-3xl shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
+        {/* Right Column: Upcoming Projects */}
+        <div className="min-h-0 h-full">
+          <Card className="bg-white dark:bg-slate-900 border-none rounded-3xl shadow-sm overflow-hidden h-full flex flex-col">
             <CardHeader className="p-4 border-b border-gray-50 dark:border-slate-800 flex flex-row items-center justify-between shrink-0">
               <div className="flex items-center space-x-3">
                 <div className="p-1.5 bg-purple-100 text-purple-600 rounded-lg">
                   <FolderKanban className="w-4 h-4" />
                 </div>
                 <div>
-                  <CardTitle className="text-[14px] font-bold text-slate-800 dark:text-white leading-none">Upcoming Projects</CardTitle>
+                  <CardTitle className="text-[15px] font-bold text-slate-800 dark:text-white leading-none">Upcoming Projects</CardTitle>
                   <div className="text-[9px] font-bold text-purple-600 bg-purple-100 px-1.5 py-0.5 rounded inline-block mt-1">
                     Recently Active
                   </div>
                 </div>
               </div>
-              <Link href="/projects" className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline">
-                View All →
-              </Link>
             </CardHeader>
             <CardContent className="p-4 flex-1 flex flex-col min-h-0 overflow-y-auto no-scrollbar">
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 {(!projects || projects.length === 0) ? (
-                   <div className="text-center py-6">
+                   <div className="text-center py-10">
                      <p className="text-gray-400 font-medium text-xs">No upcoming projects.</p>
                    </div>
                 ) : (
-                  projects.slice(0, 3).map(project => (
+                  projects.slice(0, 4).map(project => (
                     <div key={project.id} className="bg-gray-50 dark:bg-slate-800/50 p-3 rounded-2xl flex items-center justify-between group hover:bg-purple-600 transition-colors">
                        <div className="flex-1 min-w-0 pr-2">
                          <h4 className="font-bold text-slate-800 dark:text-white text-[13px] leading-tight group-hover:text-white transition-colors truncate">{project.name}</h4>
@@ -593,7 +495,12 @@ export default function DashboardPage() {
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            <div className="border-2 border-dashed border-purple-200 dark:border-purple-900/50 rounded-2xl p-6 text-center bg-purple-50/40 dark:bg-purple-950/20 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors relative group">
+            {/* File Drop & Selection Area */}
+            <div 
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={handleDrop}
+              className="border-2 border-dashed border-purple-200 dark:border-purple-900/50 rounded-2xl p-6 text-center bg-purple-50/40 dark:bg-purple-950/20 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors relative group"
+            >
               <div className="flex flex-col items-center justify-center space-y-3">
                 <div className="w-12 h-12 rounded-2xl bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 flex items-center justify-center group-hover:scale-110 transition-transform">
                   <UploadCloud className="w-6 h-6" />
@@ -635,6 +542,26 @@ export default function DashboardPage() {
               </div>
             </div>
 
+            {/* Allowed file category badges */}
+            <div className="flex flex-wrap gap-1.5 justify-center py-1">
+              <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-[10px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1">
+                <FileText className="w-3 h-3 text-blue-500" /> Documents (PDF, DOC, XLS, TXT, CSV)
+              </span>
+              <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-[10px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1">
+                <Archive className="w-3 h-3 text-amber-500" /> Zip & Archives (ZIP, RAR, 7Z, TAR, GZ)
+              </span>
+              <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-[10px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1">
+                <Image className="w-3 h-3 text-emerald-500" /> Images (JPEG, JPG, PNG, WEBP)
+              </span>
+              <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-[10px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1">
+                <Music className="w-3 h-3 text-purple-500" /> Audio (MP3, WAV)
+              </span>
+              <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-[10px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1">
+                <Video className="w-3 h-3 text-pink-500" /> Videos (MP4, MOV, AVI)
+              </span>
+            </div>
+
+            {/* Selected files list preview */}
             {selectedFiles.length > 0 && (
               <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                 <p className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
@@ -646,17 +573,37 @@ export default function DashboardPage() {
                     Clear All
                   </button>
                 </p>
-                {selectedFiles.map((file, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs">
-                    <span className="font-semibold text-slate-800 dark:text-white truncate">{file.name}</span>
-                    <button
-                      onClick={() => handleRemoveFile(idx)}
-                      className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-red-500 transition-colors"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
+                {selectedFiles.map((file, idx) => {
+                  const ext = file.name.split('.').pop()?.toLowerCase();
+                  const isArchive = ["zip", "rar", "7z", "tar", "gz", "bz2"].includes(ext || "") || file.type.includes("zip") || file.type.includes("compressed");
+                  return (
+                    <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs">
+                      <div className="flex items-center gap-2 min-w-0 pr-2">
+                        {isArchive ? (
+                          <Archive className="w-4 h-4 text-amber-500 shrink-0" />
+                        ) : file.type.startsWith("image/") ? (
+                          <Image className="w-4 h-4 text-emerald-500 shrink-0" />
+                        ) : file.type.startsWith("audio/") ? (
+                          <Music className="w-4 h-4 text-purple-500 shrink-0" />
+                        ) : file.type.startsWith("video/") ? (
+                          <Video className="w-4 h-4 text-pink-500 shrink-0" />
+                        ) : (
+                          <FileText className="w-4 h-4 text-blue-500 shrink-0" />
+                        )}
+                        <span className="font-semibold text-slate-800 dark:text-white truncate">{file.name}</span>
+                        <span className="text-[10px] text-slate-400 shrink-0">
+                          ({Math.round(file.size / 1024)} KB)
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveFile(idx)}
+                        className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-red-500 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -689,7 +636,83 @@ export default function DashboardPage() {
         </DialogContent>
       </Dialog>
 
-      {/* 3. View Project Details Dialog */}
+      {/* 3. Add Member Dialog */}
+      <Dialog open={isAddMemberDialogOpen} onOpenChange={setIsAddMemberDialogOpen}>
+        <DialogContent className="sm:max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <UserPlus className="w-5 h-5 text-purple-600" />
+              Add Team Member
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 dark:text-slate-400">
+              Invite a new member to collaborate on your workspace projects and tasks.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleAddMemberSubmit} className="space-y-4 py-2">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Member Name
+              </label>
+              <input
+                type="text"
+                value={memberName}
+                onChange={(e) => setMemberName(e.target.value)}
+                placeholder="e.g. Sarah Jenkins"
+                className="w-full px-3.5 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Email Address <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="email"
+                required
+                value={memberEmail}
+                onChange={(e) => setMemberEmail(e.target.value)}
+                placeholder="sarah@example.com"
+                className="w-full px-3.5 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Role
+              </label>
+              <select
+                value={memberRole}
+                onChange={(e) => setMemberRole(e.target.value)}
+                className="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="Developer">Developer</option>
+                <option value="Designer">Designer</option>
+                <option value="Project Manager">Project Manager</option>
+                <option value="Admin">Admin</option>
+              </select>
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsAddMemberDialogOpen(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-5 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-sm transition-colors"
+              >
+                Send Invite
+              </button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* 4. View Project Details Dialog */}
       <Dialog open={!!selectedProject} onOpenChange={(open) => !open && setSelectedProject(null)}>
         <DialogContent className="sm:max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6">
           <DialogHeader>
@@ -715,9 +738,40 @@ export default function DashboardPage() {
                 {selectedProject?.description || "No detailed description provided for this project."}
               </p>
             </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                <span className="text-[10px] font-semibold text-slate-400 block">Created On</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">
+                  {selectedProject ? new Date(selectedProject.createdAt).toLocaleDateString() : '-'}
+                </span>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                <span className="text-[10px] font-semibold text-slate-400 block">Owner ID</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200 truncate block">
+                  {selectedProject?.ownerId || 'Workspace Admin'}
+                </span>
+              </div>
+            </div>
           </div>
 
           <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-2">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                onClick={() => selectedProject && handleDeleteProject(selectedProject.id, selectedProject.name)}
+                className="px-3 py-2 text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 rounded-xl transition-colors flex items-center gap-1 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete</span>
+              </button>
+              <button
+                onClick={() => selectedProject && handleEditProject(selectedProject)}
+                className="px-3 py-2 text-xs font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-900/30 hover:bg-purple-100 rounded-xl transition-colors flex items-center gap-1 cursor-pointer"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+                <span>Edit</span>
+              </button>
+            </div>
             <button
               onClick={() => setSelectedProject(null)}
               className="px-4 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-sm transition-colors cursor-pointer w-full sm:w-auto"
