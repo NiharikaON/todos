@@ -154,7 +154,8 @@ export default function CalendarPage() {
       // IN_PROGRESS    -> #8B5CF6 (Purple)
       // COMPLETED      -> #10B981 (Emerald Green)
       let backgroundColor = "#3b82f6";
-      if (task.status === "COMPLETED") {
+      const isRecurring = task.recurrenceRule && task.recurrenceRule !== "NONE";
+      if (!isRecurring && task.status === "COMPLETED") {
         backgroundColor = "#10b981";
       } else if (task.status === "IN_PROGRESS") {
         backgroundColor = "#8b5cf6";
@@ -285,13 +286,21 @@ export default function CalendarPage() {
     const isTimePassed = targetEnd ? targetEnd < now : false;
 
     // Background Color Determination
-    let bg = "#3b82f6";
-    if (task?.status === "COMPLETED") {
-      bg = "#10b981"; // Emerald Green for Completed
-    } else if (task?.status === "IN_PROGRESS") {
-      bg = "#8b5cf6"; // Purple for In Progress
-    } else if (isRecurring && isFutureInstance) {
-      bg = "#3b82f6"; // Royal Blue for Future recurring instances
+    let bg = "#3b82f6"; // Default Pending (Blue)
+    if (isRecurring) {
+      if (isFutureInstance) {
+        bg = "#3b82f6"; // Future occurrences are pending (Blue)
+      } else if (task?.status === "COMPLETED") {
+        bg = "#10b981"; // Past/today completed instance (Green)
+      } else if (task?.status === "IN_PROGRESS") {
+        bg = "#8b5cf6"; // In Progress (Purple)
+      }
+    } else {
+      if (task?.status === "COMPLETED") {
+        bg = "#10b981";
+      } else if (task?.status === "IN_PROGRESS") {
+        bg = "#8b5cf6";
+      }
     }
 
     // Overdue Determination:
