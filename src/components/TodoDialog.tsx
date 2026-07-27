@@ -469,24 +469,48 @@ export function TodoDialog({
         }, data.dueDate ? new Date(data.dueDate) : new Date());
       }
 
-      let effectiveStartDate = data.startDate;
-      let effectiveDueDate = data.dueDate;
+      const todayObj = new Date();
+      const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, "0")}-${String(todayObj.getDate()).padStart(2, "0")}`;
 
-      if (selectedTaskType === "MONTHLY" || data.repeat === "MONTHLY") {
-        const targetDom = Number(dayOfMonth || taskToEdit?.dayOfMonth || 1);
-        const baseDate = effectiveStartDate ? new Date(effectiveStartDate) : (effectiveDueDate ? new Date(effectiveDueDate) : new Date());
-        let y = baseDate.getFullYear();
-        let m = baseDate.getMonth();
-        if (!effectiveStartDate && !effectiveDueDate && baseDate.getDate() > targetDom) {
-          m += 1;
+      let effectiveStartDate = data.startDate && data.startDate.trim() ? data.startDate : (taskToEdit?.startDate ? taskToEdit.startDate.slice(0, 10) : todayStr);
+      let effectiveDueDate = data.dueDate && data.dueDate.trim() ? data.dueDate : (taskToEdit?.dueDate ? taskToEdit.dueDate.slice(0, 10) : "");
+
+      if (!effectiveDueDate) {
+        if (selectedTaskType === "ONE_TIME" || data.repeat === "NONE" || data.repeat === "DAILY") {
+          effectiveDueDate = effectiveStartDate;
+        } else if (selectedTaskType === "WEEKLY" || data.repeat === "WEEKLY") {
+          const dow = selectedTaskType === "WEEKLY" ? dayOfWeek : (taskToEdit?.dayOfWeek || "Friday");
+          const dayMap: Record<string, number> = {
+            SUNDAY: 0, MONDAY: 1, TUESDAY: 2, WEDNESDAY: 3,
+            THURSDAY: 4, FRIDAY: 5, SATURDAY: 6
+          };
+          const targetDayIndex = dayMap[String(dow).toUpperCase()] ?? 5;
+          const baseDate = new Date(effectiveStartDate);
+          let diff = targetDayIndex - baseDate.getDay();
+          if (diff < 0) diff += 7;
+          const targetDateObj = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + diff);
+          const yStr = targetDateObj.getFullYear();
+          const mStr = String(targetDateObj.getMonth() + 1).padStart(2, "0");
+          const dStr = String(targetDateObj.getDate()).padStart(2, "0");
+          effectiveDueDate = `${yStr}-${mStr}-${dStr}`;
+        } else if (selectedTaskType === "MONTHLY" || data.repeat === "MONTHLY") {
+          const targetDom = Number(dayOfMonth || taskToEdit?.dayOfMonth || 1);
+          const baseDate = new Date(effectiveStartDate);
+          let y = baseDate.getFullYear();
+          let m = baseDate.getMonth();
+          if (baseDate.getDate() > targetDom) {
+            m += 1;
+          }
+          const targetDateObj = new Date(y, m, targetDom);
+          const yStr = targetDateObj.getFullYear();
+          const mStr = String(targetDateObj.getMonth() + 1).padStart(2, "0");
+          const dStr = String(targetDateObj.getDate()).padStart(2, "0");
+          effectiveDueDate = `${yStr}-${mStr}-${dStr}`;
+        } else if (selectedTaskType === "YEARLY" || data.repeat === "YEARLY") {
+          effectiveDueDate = effectiveStartDate;
+        } else {
+          effectiveDueDate = effectiveStartDate;
         }
-        const targetDateObj = new Date(y, m, targetDom);
-        const yStr = targetDateObj.getFullYear();
-        const mStr = String(targetDateObj.getMonth() + 1).padStart(2, "0");
-        const dStr = String(targetDateObj.getDate()).padStart(2, "0");
-        const adjustedDate = `${yStr}-${mStr}-${dStr}`;
-        if (!effectiveStartDate) effectiveStartDate = adjustedDate;
-        if (!effectiveDueDate) effectiveDueDate = adjustedDate;
       }
 
       let calculatedRrule = rruleMap[data.repeat] || null;
