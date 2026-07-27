@@ -58,6 +58,7 @@ const todoSchema = z.object({
   status: z.enum(["PENDING", "IN_PROGRESS", "COMPLETED"]).optional(),
   startDate: z.string().optional(),
   dueDate: z.string().optional(),
+  endDate: z.string().optional(),
   startTime: z.string().optional(),
   dueTime: z.string().optional(),
   reminderType: z.enum(["NONE", "ONE_TIME", "REPEATING"]),
@@ -210,15 +211,16 @@ export function TodoDialog({
         };
 
         let startDateVal = taskToEdit.startDate ? taskToEdit.startDate.slice(0, 10) : "";
-        let dueDateVal = taskToEdit.dueDate ? taskToEdit.dueDate.slice(0, 10) : taskToEdit.endDate ? taskToEdit.endDate.slice(0, 10) : "";
+        let dueDateVal = taskToEdit.dueDate ? taskToEdit.dueDate.slice(0, 10) : "";
+        let endDateVal = taskToEdit.endDate ? taskToEdit.endDate.slice(0, 10) : "";
 
         let startTimeVal = taskToEdit.startTime || "";
         if (!startTimeVal && taskToEdit.startDate && taskToEdit.startDate.includes("T")) {
           const d = new Date(taskToEdit.startDate);
           if (!isNaN(d.getTime())) {
-            const hrs = d.getHours();
-            const mins = d.getMinutes();
-            if (!(hrs === 0 && mins === 0)) {
+            if (!(d.getUTCHours() === 0 && d.getUTCMinutes() === 0)) {
+              const hrs = d.getHours();
+              const mins = d.getMinutes();
               startTimeVal = `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
             }
           }
@@ -228,18 +230,18 @@ export function TodoDialog({
         if (!dueTimeVal && taskToEdit.dueDate && taskToEdit.dueDate.includes("T")) {
           const d = new Date(taskToEdit.dueDate);
           if (!isNaN(d.getTime())) {
-            const hrs = d.getHours();
-            const mins = d.getMinutes();
-            if (!(hrs === 23 && mins === 59) && !(hrs === 0 && mins === 0)) {
+            if (!(d.getUTCHours() === 23 && d.getUTCMinutes() === 59) && !(d.getUTCHours() === 0 && d.getUTCMinutes() === 0)) {
+              const hrs = d.getHours();
+              const mins = d.getMinutes();
               dueTimeVal = `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
             }
           }
         } else if (!dueTimeVal && taskToEdit.endDate && taskToEdit.endDate.includes("T")) {
           const d = new Date(taskToEdit.endDate);
           if (!isNaN(d.getTime())) {
-            const hrs = d.getHours();
-            const mins = d.getMinutes();
-            if (!(hrs === 23 && mins === 59) && !(hrs === 0 && mins === 0)) {
+            if (!(d.getUTCHours() === 23 && d.getUTCMinutes() === 59) && !(d.getUTCHours() === 0 && d.getUTCMinutes() === 0)) {
+              const hrs = d.getHours();
+              const mins = d.getMinutes();
               dueTimeVal = `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
             }
           }
@@ -269,6 +271,7 @@ export function TodoDialog({
           status: (taskToEdit.status as any) || "PENDING",
           startDate: startDateVal,
           dueDate: dueDateVal,
+          endDate: endDateVal,
           startTime: startTimeVal,
           dueTime: dueTimeVal,
           reminderType: detectedReminderType as any,
@@ -537,7 +540,7 @@ export function TodoDialog({
         status: data.status,
         startDate: formatIsoStart(effectiveStartDate, data.startTime),
         dueDate: formatIsoDue(effectiveDueDate, data.dueTime),
-        endDate: formatIsoDue(effectiveDueDate, data.dueTime),
+        endDate: data.endDate && data.endDate.trim() ? formatIsoDue(data.endDate, data.dueTime) : null,
         startTime: data.startTime || null,
         dueTime: data.dueTime || null,
         taskType: selectedTaskType,
@@ -867,23 +870,21 @@ export function TodoDialog({
               </select>
             </div>
 
-            {/* Status (Only for ONE_TIME) */}
-            {selectedTaskType === "ONE_TIME" && (
-              <div className="space-y-1.5">
-                <Label htmlFor="status" className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                  Status
-                </Label>
-                <select
-                  id="status"
-                  {...register("status")}
-                  className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold bg-slate-50/50 dark:bg-slate-800/50 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
-                >
-                  <option value="PENDING">Todo</option>
-                  <option value="IN_PROGRESS">In Progress</option>
-                  <option value="COMPLETED">Completed</option>
-                </select>
-              </div>
-            )}
+            {/* Status */}
+            <div className="space-y-1.5">
+              <Label htmlFor="status" className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                Status
+              </Label>
+              <select
+                id="status"
+                {...register("status")}
+                className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold bg-slate-50/50 dark:bg-slate-800/50 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
+              >
+                <option value="PENDING">Todo</option>
+                <option value="IN_PROGRESS">In Progress</option>
+                <option value="COMPLETED">Completed</option>
+              </select>
+            </div>
           </div>
 
           {/* TAILORED SCHEDULE & REMINDER SECTION */}
@@ -895,7 +896,18 @@ export function TodoDialog({
                 <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                 <span>Schedule & One-Time Reminder</span>
               </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="startDate" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    Start Date
+                  </Label>
+                  <input
+                    id="startDate"
+                    type="date"
+                    {...register("startDate")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
                 <div className="space-y-1">
                   <Label htmlFor="dueDate" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
                     Due Date
@@ -947,7 +959,7 @@ export function TodoDialog({
                 <Repeat className="w-4 h-4 text-emerald-500" />
                 <span>Daily Habit & Interval Reminder Schedule</span>
               </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
                 <div className="space-y-1">
                   <Label htmlFor="startDate" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
                     Start Date
@@ -956,6 +968,17 @@ export function TodoDialog({
                     id="startDate"
                     type="date"
                     {...register("startDate")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="endDate" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    End Date (Optional)
+                  </Label>
+                  <input
+                    id="endDate"
+                    type="date"
+                    {...register("endDate")}
                     className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
                   />
                 </div>
@@ -1007,7 +1030,7 @@ export function TodoDialog({
                 <Calendar className="w-4 h-4 text-blue-500" />
                 <span>Weekly Task Schedule</span>
               </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
                 <div className="space-y-1">
                   <Label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
                     Day of Week
@@ -1025,6 +1048,28 @@ export function TodoDialog({
                     <option value="Saturday">Saturday</option>
                     <option value="Sunday">Sunday</option>
                   </select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="startDate" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    Start Date
+                  </Label>
+                  <input
+                    id="startDate"
+                    type="date"
+                    {...register("startDate")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="endDate" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    End Date (Optional)
+                  </Label>
+                  <input
+                    id="endDate"
+                    type="date"
+                    {...register("endDate")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="dueTime" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
@@ -1063,7 +1108,7 @@ export function TodoDialog({
                 <Clock className="w-4 h-4 text-amber-500" />
                 <span>Monthly Task Schedule</span>
               </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
                 <div className="space-y-1">
                   <Label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
                     Day of Month
@@ -1079,6 +1124,28 @@ export function TodoDialog({
                       </option>
                     ))}
                   </select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="startDate" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    Start Date
+                  </Label>
+                  <input
+                    id="startDate"
+                    type="date"
+                    {...register("startDate")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="endDate" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    End Date (Optional)
+                  </Label>
+                  <input
+                    id="endDate"
+                    type="date"
+                    {...register("endDate")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="dueTime" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
@@ -1116,15 +1183,26 @@ export function TodoDialog({
                 <Sparkles className="w-4 h-4 text-rose-500" />
                 <span>Yearly Reminder Schedule</span>
               </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div className="space-y-1">
-                  <Label htmlFor="dueDate" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                    Date
+                  <Label htmlFor="startDate" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    Start Date
                   </Label>
                   <input
-                    id="dueDate"
+                    id="startDate"
                     type="date"
-                    {...register("dueDate")}
+                    {...register("startDate")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="endDate" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    End Date (Optional)
+                  </Label>
+                  <input
+                    id="endDate"
+                    type="date"
+                    {...register("endDate")}
                     className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
                   />
                 </div>

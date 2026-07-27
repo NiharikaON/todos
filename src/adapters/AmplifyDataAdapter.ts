@@ -18,18 +18,18 @@ export class AmplifyDataAdapter {
       startTime: appSyncTodo.startTime || (appSyncTodo.startDate && appSyncTodo.startDate.includes("T") ? (() => {
         const d = new Date(appSyncTodo.startDate);
         if (isNaN(d.getTime())) return null;
+        if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0) return null;
         const hrs = d.getHours();
         const mins = d.getMinutes();
-        if (hrs === 0 && mins === 0) return null;
         return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
       })() : null),
       dueTime: appSyncTodo.dueTime || (appSyncTodo.dueDate && appSyncTodo.dueDate.includes("T") ? (() => {
         const d = new Date(appSyncTodo.dueDate);
         if (isNaN(d.getTime())) return null;
+        if (d.getUTCHours() === 23 && d.getUTCMinutes() === 59) return null;
+        if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0) return null;
         const hrs = d.getHours();
         const mins = d.getMinutes();
-        if (hrs === 23 && mins === 59) return null;
-        if (hrs === 0 && mins === 0) return null;
         return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
       })() : null),
       projectId: appSyncTodo.projectId || null,

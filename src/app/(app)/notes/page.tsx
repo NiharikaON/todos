@@ -28,12 +28,16 @@ import {
 
 function formatTaskDateDisplay(dateStr?: string | null, timeStr?: string | null): string {
   if (!dateStr) return "";
-  const d = new Date(dateStr);
-  const dateFormatted = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const parts = dateStr.slice(0, 10).split("-");
+  const year = Number(parts[0]);
+  const month = Number(parts[1]) - 1;
+  const day = Number(parts[2]);
+  const localDate = new Date(year, month, day);
+  const dateFormatted = localDate.toLocaleDateString("en-US", { month: 'short', day: 'numeric' });
 
   if (timeStr && timeStr.trim()) {
     const [hr, min] = timeStr.split(":").map(Number);
-    const dateObj = new Date(d.getFullYear(), d.getMonth(), d.getDate(), hr, min);
+    const dateObj = new Date(year, month, day, hr, min);
     return `${dateFormatted}, ${dateObj.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
   }
   return dateFormatted;

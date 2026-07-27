@@ -43,21 +43,20 @@ export function isTaskScheduledForDate(task: Task, targetDateStr: string): boole
   targetDate.setHours(0, 0, 0, 0);
   const targetTime = targetDate.getTime();
 
-  const startStr = task.startDate ? task.startDate.slice(0, 10) : task.dueDate ? task.dueDate.slice(0, 10) : null;
-  const dueStr = task.dueDate ? task.dueDate.slice(0, 10) : startStr;
-
-  if (startStr === cleanTargetStr || dueStr === cleanTargetStr) return true;
-
   const repeat = task.repeat || (
-    task.recurrenceRule === "FREQ=DAILY" ? "DAILY" :
-    task.recurrenceRule === "FREQ=WEEKDAYS" ? "WEEKDAYS" :
-    task.recurrenceRule === "FREQ=WEEKLY" ? "WEEKLY" :
-    task.recurrenceRule === "FREQ=MONTHLY" ? "MONTHLY" :
-    task.recurrenceRule === "FREQ=YEARLY" ? "YEARLY" : "NONE"
+    task.recurrenceRule?.includes("FREQ=DAILY") ? "DAILY" :
+    task.recurrenceRule?.includes("FREQ=WEEKDAYS") ? "WEEKDAYS" :
+    task.recurrenceRule?.includes("FREQ=WEEKLY") ? "WEEKLY" :
+    task.recurrenceRule?.includes("FREQ=MONTHLY") ? "MONTHLY" :
+    task.recurrenceRule?.includes("FREQ=YEARLY") ? "YEARLY" : "NONE"
   );
 
-  if (repeat === "NONE") return false;
+  if (repeat === "NONE") {
+    const dueStr = task.dueDate ? task.dueDate.slice(0, 10) : task.startDate ? task.startDate.slice(0, 10) : null;
+    return dueStr === cleanTargetStr;
+  }
 
+  const startStr = task.startDate ? task.startDate.slice(0, 10) : task.dueDate ? task.dueDate.slice(0, 10) : null;
   const startDate = startStr ? new Date(startStr) : new Date();
   startDate.setHours(0, 0, 0, 0);
 
@@ -82,18 +81,20 @@ export function isTaskScheduledForDate(task: Task, targetDateStr: string): boole
       const targetDayName = days[targetDate.getDay()];
       return targetDayName.toLowerCase() === String(task.dayOfWeek).toLowerCase();
     }
-    return targetDate.getDay() === startDate.getDay();
+    const dueDay = task.dueDate ? new Date(task.dueDate).getDay() : startDate.getDay();
+    return targetDate.getDay() === dueDay;
   }
 
   if (repeat === "MONTHLY") {
-    if (task.dayOfMonth) {
-      return targetDate.getDate() === Number(task.dayOfMonth);
-    }
-    return targetDate.getDate() === startDate.getDate();
+    const targetDom = task.dayOfMonth 
+      ? Number(task.dayOfMonth) 
+      : (task.dueDate ? new Date(task.dueDate).getDate() : startDate.getDate());
+    return targetDate.getDate() === targetDom;
   }
 
   if (repeat === "YEARLY") {
-    return targetDate.getMonth() === startDate.getMonth() && targetDate.getDate() === startDate.getDate();
+    const dueObj = task.dueDate ? new Date(task.dueDate) : startDate;
+    return targetDate.getMonth() === dueObj.getMonth() && targetDate.getDate() === dueObj.getDate();
   }
 
   return false;
@@ -330,11 +331,16 @@ export default function CalendarPage() {
       }
 
       if (rruleCode && rruleCode !== "NONE") {
+        let rruleFull = rruleCode;
+        if (task.endDate) {
+          const endStr = task.endDate.slice(0, 10).replace(/-/g, "");
+          rruleFull += `;UNTIL=${endStr}T235959Z`;
+        }
         const dateOnlyStr = task.dueDate ? task.dueDate.slice(0, 10).replace(/-/g, "") : (task.startDate ? task.startDate.slice(0, 10).replace(/-/g, "") : "");
         if (!hasExplicitTime && dateOnlyStr) {
-          baseEvent.rrule = `DTSTART:${dateOnlyStr}\nRRULE:${rruleCode}`;
+          baseEvent.rrule = `DTSTART:${dateOnlyStr}\nRRULE:${rruleFull}`;
         } else {
-          baseEvent.rrule = `DTSTART:${eventTargetDate.toISOString().replace(/[-:]/g, "").split('.')[0]}Z\nRRULE:${rruleCode}`;
+          baseEvent.rrule = `DTSTART:${eventTargetDate.toISOString().replace(/[-:]/g, "").split('.')[0]}Z\nRRULE:${rruleFull}`;
         }
       } else {
         if (!hasExplicitTime) {
