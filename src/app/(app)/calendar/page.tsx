@@ -134,7 +134,6 @@ export default function CalendarPage() {
     "Shopping",
     "Study",
     "Others",
-    "Other",
   ]);
   const [showDailyHabits, setShowDailyHabits] = useState<boolean>(true);
   
@@ -207,7 +206,7 @@ export default function CalendarPage() {
 
       // 4. Category Filter
       const category = task.category || "Personal";
-      const matchesCategory = selectedCategories.includes(category);
+      const matchesCategory = selectedCategories.includes(category) || (category === "Other" && selectedCategories.includes("Others"));
       if (!matchesCategory) return false;
 
       // 5. Daily Habits Toggle Filter
@@ -532,7 +531,7 @@ export default function CalendarPage() {
     );
   }
 
-  const allCategories = ["Personal", "Work", "Health", "Finance", "Shopping", "Study", "Others", "Other"];
+  const allCategories = ["Personal", "Work", "Health", "Finance", "Shopping", "Study", "Others"];
 
   const handleJumpToToday = () => {
     if (calendarRef.current) {

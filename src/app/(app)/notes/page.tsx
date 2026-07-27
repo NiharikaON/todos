@@ -156,7 +156,7 @@ export default function NotesPage() {
           <option value="Shopping">Shopping</option>
           <option value="Health">Health</option>
           <option value="Finance">Finance</option>
-          <option value="Other">Other</option>
+          <option value="Others">Others</option>
         </select>
       </div>
 
