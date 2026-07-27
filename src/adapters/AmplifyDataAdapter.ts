@@ -53,8 +53,6 @@ export class AmplifyDataAdapter {
   }
 
   static mapError(error: unknown, defaultMessage: string): Error {
-    console.error("Amplify Error:", error);
-    
     // Check for GraphQL errors structure
     if (error && typeof error === 'object' && 'errors' in error) {
       const graphqlErrors = (error as any).errors;
