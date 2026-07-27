@@ -17,6 +17,7 @@ export interface ChecklistItem {
 export type RepeatPattern = "NONE" | "DAILY" | "WEEKDAYS" | "WEEKLY" | "MONTHLY" | "YEARLY";
 export type ReminderType = "NONE" | "ONE_TIME" | "REPEATING";
 export type ReminderInterval = "30_MIN" | "1_HOUR" | "2_HOURS" | "3_HOURS" | "4_HOURS" | "CUSTOM";
+export type TaskType = "ONE_TIME" | "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
 
 export interface Task {
   id: string;
@@ -40,12 +41,15 @@ export interface Task {
   recurrenceExceptions?: string[] | null;
   originalTodoId?: string | null;
   reminderSetting?: string | null;
+  taskType?: TaskType | null;
   repeat?: RepeatPattern | null;
   reminderType?: ReminderType | null;
   reminderInterval?: ReminderInterval | null;
   customReminderIntervalMinutes?: number | null;
   reminderStartTime?: string | null;
   reminderEndTime?: string | null;
+  dayOfWeek?: number | string | null;
+  dayOfMonth?: number | null;
   lastReminderSent?: string | null;
   nextReminderTime?: string | null;
   nextOccurrenceDate?: string | null;

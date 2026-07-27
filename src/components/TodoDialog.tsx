@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Task, ChecklistItem } from "@/types";
+import { Task, ChecklistItem, TaskType } from "@/types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { todoRepository, storageRepository } from "@/repositories";
 import { useAuth } from "@/providers/AuthProvider";
@@ -15,7 +15,6 @@ import { FileUpload } from "@/components/FileUpload";
 import { FileList } from "@/components/FileList";
 import { useFileUpload } from "@/hooks/useFileUpload";
 import { useActivity } from "@/providers/ActivityProvider";
-import { generateRecurringOccurrences, RecurrencePattern } from "@/utils/recurrence";
 import { scheduleTaskReminderNotification } from "@/utils/reminders";
 import { 
   calculateNextOneTimeReminder, 
@@ -23,11 +22,7 @@ import {
   calculateNextOccurrenceDate 
 } from "@/utils/reminderEngine";
 import { 
-  AlertTriangle, 
-  Send, 
-  Edit2, 
   Trash2, 
-  Check, 
   X, 
   Star, 
   Calendar, 
@@ -42,14 +37,13 @@ import {
   Plus, 
   RotateCcw,
   Sparkles,
-  CheckCircle2
+  CheckCircle2,
+  FileText,
+  ArrowLeft
 } from "lucide-react";
 
 const todoSchema = z.object({
-  title: z
-    .string()
-    .min(1, "Task Title is required")
-    .max(100, "Task Title must be 100 characters or less"),
+  title: z.string().min(1, "Task title is required").max(100, "Title cannot exceed 100 characters"),
   description: z.string().optional(),
   category: z.enum([
     "Personal",
@@ -121,6 +115,12 @@ export function TodoDialog({
   const { logActivity } = useActivity();
   const isEditing = !!taskToEdit;
 
+  // Wizard State
+  const [step, setStep] = useState<1 | 2>(1);
+  const [selectedTaskType, setSelectedTaskType] = useState<TaskType>("ONE_TIME");
+  const [dayOfWeek, setDayOfWeek] = useState<string>("Friday");
+  const [dayOfMonth, setDayOfMonth] = useState<number>(1);
+
   // Additional Interactive State
   const [isFavorite, setIsFavorite] = useState<boolean>(false);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
@@ -129,9 +129,6 @@ export function TodoDialog({
   const [newTagInput, setNewTagInput] = useState("");
 
   // Comments State
-  const [newComment, setNewComment] = useState("");
-  const [editingCommentIndex, setEditingCommentIndex] = useState<number | null>(null);
-  const [editingCommentText, setEditingCommentText] = useState("");
   const [localComments, setLocalComments] = useState<string[]>([]);
 
   const defaultFormValues: TodoFormValues = {
@@ -168,10 +165,6 @@ export function TodoDialog({
   });
 
   const watchTitle = watch("title") || "";
-  const watchPriority = watch("priority");
-  const watchStatus = watch("status");
-  const watchReminderType = watch("reminderType") || "NONE";
-  const watchReminderInterval = watch("reminderInterval") || "2_HOURS";
 
   const {
     files,
@@ -190,6 +183,19 @@ export function TodoDialog({
   useEffect(() => {
     if (open) {
       if (taskToEdit) {
+        setStep(2);
+        let tType: TaskType = (taskToEdit.taskType as any) || "ONE_TIME";
+        if (!taskToEdit.taskType) {
+          if (taskToEdit.repeat === "DAILY" || taskToEdit.recurrenceRule === "FREQ=DAILY") tType = "DAILY";
+          else if (taskToEdit.repeat === "WEEKLY" || taskToEdit.recurrenceRule === "FREQ=WEEKLY") tType = "WEEKLY";
+          else if (taskToEdit.repeat === "MONTHLY" || taskToEdit.recurrenceRule === "FREQ=MONTHLY") tType = "MONTHLY";
+          else if (taskToEdit.repeat === "YEARLY" || taskToEdit.recurrenceRule === "FREQ=YEARLY") tType = "YEARLY";
+        }
+        setSelectedTaskType(tType);
+
+        if (taskToEdit.dayOfWeek) setDayOfWeek(String(taskToEdit.dayOfWeek));
+        if (taskToEdit.dayOfMonth) setDayOfMonth(Number(taskToEdit.dayOfMonth));
+
         setIsFavorite(!!taskToEdit.isFavorite);
         setChecklist(taskToEdit.checklist || []);
         setTags(taskToEdit.labels || []);
@@ -203,44 +209,8 @@ export function TodoDialog({
           "FREQ=YEARLY": "YEARLY",
         };
 
-        let startDateVal = taskToEdit.startDate
-          ? taskToEdit.startDate.slice(0, 10)
-          : "";
-        let dueDateVal = taskToEdit.dueDate
-          ? taskToEdit.dueDate.slice(0, 10)
-          : taskToEdit.endDate
-          ? taskToEdit.endDate.slice(0, 10)
-          : "";
-
-        let startTimeVal = taskToEdit.startTime || "";
-        if (!startTimeVal && taskToEdit.startDate && taskToEdit.startDate.includes("T")) {
-          const timePart = taskToEdit.startDate.split("T")[1]?.slice(0, 5);
-          if (timePart && timePart !== "00:00") {
-            startTimeVal = timePart;
-          }
-        }
-
-        let dueTimeVal = taskToEdit.dueTime || "";
-        if (!dueTimeVal && taskToEdit.dueDate && taskToEdit.dueDate.includes("T")) {
-          const timePart = taskToEdit.dueDate.split("T")[1]?.slice(0, 5);
-          if (timePart && timePart !== "23:59" && timePart !== "00:00") {
-            dueTimeVal = timePart;
-          }
-        } else if (!dueTimeVal && taskToEdit.endDate && taskToEdit.endDate.includes("T")) {
-          const timePart = taskToEdit.endDate.split("T")[1]?.slice(0, 5);
-          if (timePart && timePart !== "23:59" && timePart !== "00:00") {
-            dueTimeVal = timePart;
-          }
-        }
-
-        if (dueTimeVal && !dueDateVal) {
-          dueDateVal = startDateVal || getTodayDateString();
-        }
-        if (startTimeVal && !startDateVal) {
-          startDateVal = getTodayDateString();
-        }
-
-        const detectedReminderType = taskToEdit.reminderType || (taskToEdit.reminderSetting && taskToEdit.reminderSetting !== "NONE" ? "ONE_TIME" : "NONE");
+        let startDateVal = taskToEdit.startDate ? taskToEdit.startDate.slice(0, 10) : "";
+        let dueDateVal = taskToEdit.dueDate ? taskToEdit.dueDate.slice(0, 10) : taskToEdit.endDate ? taskToEdit.endDate.slice(0, 10) : "";
 
         reset({
           title: taskToEdit.title,
@@ -250,9 +220,9 @@ export function TodoDialog({
           status: (taskToEdit.status as any) || "PENDING",
           startDate: startDateVal,
           dueDate: dueDateVal,
-          startTime: startTimeVal,
-          dueTime: dueTimeVal,
-          reminderType: detectedReminderType as any,
+          startTime: taskToEdit.startTime || "",
+          dueTime: taskToEdit.dueTime || "",
+          reminderType: (taskToEdit.reminderType as any) || "NONE",
           reminderSetting: (taskToEdit.reminderSetting as any) || "NONE",
           reminderInterval: (taskToEdit.reminderInterval as any) || "2_HOURS",
           customReminderIntervalMinutes: taskToEdit.customReminderIntervalMinutes || 60,
@@ -278,7 +248,10 @@ export function TodoDialog({
             : []
         );
       } else {
-        // Create Mode
+        setStep(1);
+        setSelectedTaskType("ONE_TIME");
+        setDayOfWeek("Friday");
+        setDayOfMonth(1);
         setIsFavorite(false);
         setChecklist([]);
         setTags([]);
@@ -290,29 +263,55 @@ export function TodoDialog({
         setInitialFiles([]);
       }
     }
-  }, [taskToEdit, open, reset, initialDate, setInitialFiles]);
+  }, [taskToEdit, open, reset, setInitialFiles]);
 
-  // Reset Form Action
+  const handleSelectTaskType = (type: TaskType) => {
+    setSelectedTaskType(type);
+    setStep(2);
+
+    if (type === "ONE_TIME") {
+      setValue("repeat", "NONE");
+      setValue("reminderType", "ONE_TIME");
+      setValue("reminderSetting", "AT_DUE_TIME");
+    } else if (type === "DAILY") {
+      setValue("repeat", "DAILY");
+      setValue("reminderType", "REPEATING");
+      setValue("reminderInterval", "2_HOURS");
+      if (!watch("startDate")) setValue("startDate", getTodayDateString());
+    } else if (type === "WEEKLY") {
+      setValue("repeat", "WEEKLY");
+      setValue("reminderType", "ONE_TIME");
+      setValue("reminderSetting", "1_HOUR");
+      if (!watch("startDate")) setValue("startDate", getTodayDateString());
+    } else if (type === "MONTHLY") {
+      setValue("repeat", "MONTHLY");
+      setValue("reminderType", "ONE_TIME");
+      setValue("reminderSetting", "1_DAY");
+      if (!watch("startDate")) setValue("startDate", getTodayDateString());
+    } else if (type === "YEARLY") {
+      setValue("repeat", "YEARLY");
+      setValue("reminderType", "ONE_TIME");
+      setValue("reminderSetting", "1_DAY");
+      if (!watch("startDate")) setValue("startDate", getTodayDateString());
+    }
+  };
+
   const handleResetForm = () => {
     reset(defaultFormValues);
     setIsFavorite(false);
     setChecklist([]);
     setTags([]);
-    setNewChecklistText("");
-    setNewTagInput("");
-    setNewComment("");
+    setLocalComments([]);
   };
 
-  // Checklist Actions
   const handleAddChecklistItem = () => {
-    if (!newChecklistText.trim()) return;
-    const newItem: ChecklistItem = {
-      id: `chk_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      text: newChecklistText.trim(),
-      completed: false,
-    };
-    setChecklist((prev) => [...prev, newItem]);
-    setNewChecklistText("");
+    if (newChecklistText.trim()) {
+      setChecklist((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), text: newChecklistText.trim(), completed: false },
+      ]);
+      setNewChecklistText("");
+    }
   };
 
   const handleToggleChecklistItem = (id: string) => {
@@ -327,7 +326,6 @@ export function TodoDialog({
     setChecklist((prev) => prev.filter((item) => item.id !== id));
   };
 
-  // Tag Actions
   const handleAddTag = () => {
     const trimmed = newTagInput.trim();
     if (trimmed && !tags.includes(trimmed)) {
@@ -340,7 +338,6 @@ export function TodoDialog({
     setTags((prev) => prev.filter((t) => t !== tagToRemove));
   };
 
-  // Checklist Progress Calculation
   const totalChecklistItems = checklist.length;
   const completedChecklistItems = checklist.filter((c) => c.completed).length;
   const checklistProgressPct =
@@ -437,6 +434,7 @@ export function TodoDialog({
         endDate: formatIsoDue(data.dueDate, data.dueTime),
         startTime: data.startTime || null,
         dueTime: data.dueTime || null,
+        taskType: selectedTaskType,
         repeat: data.repeat,
         reminderType: data.reminderType,
         reminderSetting: data.reminderType === "ONE_TIME" ? data.reminderSetting : "NONE",
@@ -444,6 +442,8 @@ export function TodoDialog({
         customReminderIntervalMinutes: data.customReminderIntervalMinutes || null,
         reminderStartTime: data.reminderStartTime || null,
         reminderEndTime: data.reminderEndTime || null,
+        dayOfWeek: selectedTaskType === "WEEKLY" ? dayOfWeek : null,
+        dayOfMonth: selectedTaskType === "MONTHLY" ? dayOfMonth : null,
         nextReminderTime: nextRemTime,
         nextOccurrenceDate: nextOccDate,
         recurrenceRule: rruleMap[data.repeat] || null,
@@ -476,7 +476,7 @@ export function TodoDialog({
         id: savedTask.id,
         title: savedTask.title,
         type: "task",
-        status: savedTask.status,
+        status: isEditing ? "updated" : "created",
         subtitle: `${savedTask.priority} priority • ${savedTask.category}`,
         href: "/todos",
       });
@@ -509,20 +509,6 @@ export function TodoDialog({
     mutation.mutate(data);
   };
 
-  // Priority UI styling helper
-  const getPriorityBadgeClass = (p: string) => {
-    switch (p) {
-      case "LOW":
-        return "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200";
-      case "MEDIUM":
-        return "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200";
-      case "HIGH":
-        return "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200";
-      default:
-        return "";
-    }
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[700px] max-h-[92vh] overflow-y-auto p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-2xl">
@@ -530,14 +516,15 @@ export function TodoDialog({
           <div>
             <DialogTitle className="text-xl font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-              <span>{isEditing ? "Edit Task" : "Create New Task"}</span>
+              <span>{isEditing ? "Edit Task" : "Task Creation Wizard"}</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Fill out task details below. Fields marked with * are required.
+              {step === 1 && !isEditing
+                ? "Step 1 of 2: Choose task type to open a tailored form."
+                : `Step 2 of 2: ${selectedTaskType.replace("_", " ")} Configuration`}
             </DialogDescription>
           </div>
 
-          {/* Favorite Star Toggle */}
           <button
             type="button"
             onClick={() => setIsFavorite(!isFavorite)}
@@ -552,8 +539,149 @@ export function TodoDialog({
           </button>
         </DialogHeader>
 
+        {/* STEP 1: CHOOSE TASK TYPE SCREEN */}
+        {step === 1 && !isEditing ? (
+          <div className="space-y-6 py-4">
+            <div className="text-center space-y-1 max-w-md mx-auto">
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-white">What would you like to create?</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Choose a task type to open a clean form with only the fields you need.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {/* Card 1: One-Time Task */}
+              <button
+                type="button"
+                onClick={() => handleSelectTaskType("ONE_TIME")}
+                className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 hover:border-purple-500 dark:hover:border-purple-500 hover:shadow-md transition-all text-left group cursor-pointer"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <FileText className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-900 dark:text-white">📝 One-Time Task</span>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-snug">
+                      For tasks that happen only once (e.g. AWS Deployment, Buy Laptop).
+                    </p>
+                  </div>
+                </div>
+              </button>
+
+              {/* Card 2: Daily Habit */}
+              <button
+                type="button"
+                onClick={() => handleSelectTaskType("DAILY")}
+                className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 hover:border-emerald-500 dark:hover:border-emerald-500 hover:shadow-md transition-all text-left group cursor-pointer"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <Repeat className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-900 dark:text-white">🔁 Daily Habit</span>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-snug">
+                      For daily habits & interval reminders (e.g. Drink Water, Exercise).
+                    </p>
+                  </div>
+                </div>
+              </button>
+
+              {/* Card 3: Weekly Task */}
+              <button
+                type="button"
+                onClick={() => handleSelectTaskType("WEEKLY")}
+                className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 hover:border-blue-500 dark:hover:border-blue-500 hover:shadow-md transition-all text-left group cursor-pointer"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <Calendar className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-900 dark:text-white">📅 Weekly Task</span>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-snug">
+                      For weekly tasks on a chosen day (e.g. Weekly Team Report).
+                    </p>
+                  </div>
+                </div>
+              </button>
+
+              {/* Card 4: Monthly Task */}
+              <button
+                type="button"
+                onClick={() => handleSelectTaskType("MONTHLY")}
+                className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 hover:border-amber-500 dark:hover:border-amber-500 hover:shadow-md transition-all text-left group cursor-pointer"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <Clock className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-900 dark:text-white">🗓 Monthly Task</span>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-snug">
+                      For tasks on a specific monthly date (e.g. Pay Electricity Bill).
+                    </p>
+                  </div>
+                </div>
+              </button>
+
+              {/* Card 5: Yearly Reminder */}
+              <button
+                type="button"
+                onClick={() => handleSelectTaskType("YEARLY")}
+                className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 hover:border-rose-500 dark:hover:border-rose-500 hover:shadow-md transition-all text-left group sm:col-span-2 cursor-pointer"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <Sparkles className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-900 dark:text-white">🎉 Yearly Reminder</span>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-snug">
+                      For annual reminders every year (e.g. Birthdays, Anniversaries).
+                    </p>
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+              <button
+                type="button"
+                onClick={() => onOpenChange(false)}
+                className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+
+        /* STEP 2: TAILORED TASK FORM */
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 pt-4">
           
+          {!isEditing && (
+            <button
+              type="button"
+              onClick={() => setStep(1)}
+              className="text-xs text-purple-600 dark:text-purple-400 font-bold flex items-center gap-1 hover:underline cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Back to Task Types</span>
+            </button>
+          )}
+
           {/* SECTION 1: Basic Information */}
           <div className="space-y-4">
             <div className="space-y-1.5">
@@ -594,9 +722,8 @@ export function TodoDialog({
             </div>
           </div>
 
-          {/* SECTION 2: Category, Priority, Status */}
+          {/* SECTION 2: Category, Priority, Status (Tailored by Task Type) */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            
             {/* Category */}
             <div className="space-y-1.5">
               <Label htmlFor="category" className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
@@ -616,9 +743,6 @@ export function TodoDialog({
                 <option value="Study">Study</option>
                 <option value="Others">Others</option>
               </select>
-              {errors.category && (
-                <p className="text-[11px] text-rose-500 font-medium">{errors.category.message}</p>
-              )}
             </div>
 
             {/* Priority */}
@@ -635,234 +759,299 @@ export function TodoDialog({
                 <option value="MEDIUM">Medium</option>
                 <option value="HIGH">High</option>
               </select>
-              {errors.priority && (
-                <p className="text-[11px] text-rose-500 font-medium">{errors.priority.message}</p>
-              )}
             </div>
 
-            {/* Status */}
-            <div className="space-y-1.5">
-              <Label htmlFor="status" className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                Status
-              </Label>
-              <select
-                id="status"
-                {...register("status")}
-                className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold bg-slate-50/50 dark:bg-slate-800/50 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
-              >
-                <option value="PENDING">Todo</option>
-                <option value="IN_PROGRESS">In Progress</option>
-                <option value="COMPLETED">Completed</option>
-              </select>
-              {errors.status && (
-                <p className="text-[11px] text-rose-500 font-medium">{errors.status.message}</p>
-              )}
-            </div>
-          </div>
-
-          {/* SECTION 3: Schedule (Dates & Times) */}
-          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-3">
-            <h4 className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
-              <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-              <span>Schedule & Timing</span>
-            </h4>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Start Date & Time */}
-              <div className="space-y-1">
-                <Label htmlFor="startDate" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                  Start Date (Optional)
-                </Label>
-                <input
-                  id="startDate"
-                  type="date"
-                  {...register("startDate")}
-                  className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="startTime" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                  Start Time (Optional)
-                </Label>
-                <input
-                  id="startTime"
-                  type="time"
-                  {...register("startTime")}
-                  className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
-
-              {/* Due Date & Time */}
-              <div className="space-y-1">
-                <Label htmlFor="dueDate" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                  Due Date (Optional)
-                </Label>
-                <input
-                  id="dueDate"
-                  type="date"
-                  {...register("dueDate")}
-                  className={`w-full h-9 px-3 rounded-lg border text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500 ${
-                    errors.dueDate ? "border-rose-500" : "border-slate-200 dark:border-slate-700"
-                  }`}
-                />
-                {errors.dueDate && (
-                  <p className="text-[11px] text-rose-500 font-medium">{errors.dueDate.message}</p>
-                )}
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="dueTime" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                  Due Time (Optional)
-                </Label>
-                <input
-                  id="dueTime"
-                  type="time"
-                  {...register("dueTime")}
-                  className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* SECTION 4: Reminder & Repeat */}
-          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-4">
-            <h4 className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
-              <Bell className="w-4 h-4 text-amber-500" />
-              <span>Reminder & Repeat Settings</span>
-            </h4>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Repeat Options */}
+            {/* Status (Only for ONE_TIME) */}
+            {selectedTaskType === "ONE_TIME" && (
               <div className="space-y-1.5">
-                <Label htmlFor="repeat" className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                  <Repeat className="w-3.5 h-3.5 text-blue-500" />
-                  <span>Repeat</span>
+                <Label htmlFor="status" className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  Status
                 </Label>
                 <select
-                  id="repeat"
-                  {...register("repeat")}
-                  className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
+                  id="status"
+                  {...register("status")}
+                  className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold bg-slate-50/50 dark:bg-slate-800/50 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
                 >
-                  <option value="NONE">Does Not Repeat (Default)</option>
-                  <option value="DAILY">Daily</option>
-                  <option value="WEEKDAYS">Weekdays (Mon - Fri)</option>
-                  <option value="WEEKLY">Weekly</option>
-                  <option value="MONTHLY">Monthly</option>
-                  <option value="YEARLY">Yearly</option>
-                </select>
-              </div>
-
-              {/* Reminder Type */}
-              <div className="space-y-1.5">
-                <Label htmlFor="reminderType" className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                  <Bell className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Reminder Type</span>
-                </Label>
-                <select
-                  id="reminderType"
-                  {...register("reminderType")}
-                  className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
-                >
-                  <option value="NONE">None</option>
-                  <option value="ONE_TIME">One-Time Reminder</option>
-                  <option value="REPEATING">Repeating Reminder</option>
-                </select>
-              </div>
-            </div>
-
-            {/* One-Time Reminder Fields */}
-            {watchReminderType === "ONE_TIME" && (
-              <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 space-y-1.5">
-                <Label htmlFor="reminderSetting" className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  One-Time Reminder Option
-                </Label>
-                <select
-                  id="reminderSetting"
-                  {...register("reminderSetting")}
-                  className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
-                >
-                  <option value="AT_DUE_TIME">At Due Time</option>
-                  <option value="5_MIN">5 Minutes Before</option>
-                  <option value="15_MIN">15 Minutes Before</option>
-                  <option value="30_MIN">30 Minutes Before</option>
-                  <option value="1_HOUR">1 Hour Before</option>
-                  <option value="1_DAY">1 Day Before</option>
+                  <option value="PENDING">Todo</option>
+                  <option value="IN_PROGRESS">In Progress</option>
+                  <option value="COMPLETED">Completed</option>
                 </select>
               </div>
             )}
+          </div>
 
-            {/* Repeating Reminder Fields */}
-            {watchReminderType === "REPEATING" && (
-              <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {/* Interval */}
-                  <div className="space-y-1">
-                    <Label htmlFor="reminderInterval" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                      Reminder Interval
-                    </Label>
-                    <select
-                      id="reminderInterval"
-                      {...register("reminderInterval")}
-                      className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
-                    >
-                      <option value="30_MIN">Every 30 Minutes</option>
-                      <option value="1_HOUR">Every 1 Hour</option>
-                      <option value="2_HOURS">Every 2 Hours</option>
-                      <option value="3_HOURS">Every 3 Hours</option>
-                      <option value="4_HOURS">Every 4 Hours</option>
-                      <option value="CUSTOM">Custom Interval</option>
-                    </select>
-                  </div>
+          {/* TAILORED SCHEDULE & REMINDER SECTION */}
 
-                  {/* Start Time */}
-                  <div className="space-y-1">
-                    <Label htmlFor="reminderStartTime" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                      Start Time
-                    </Label>
-                    <input
-                      id="reminderStartTime"
-                      type="time"
-                      {...register("reminderStartTime")}
-                      className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
-                    />
-                  </div>
-
-                  {/* End Time */}
-                  <div className="space-y-1">
-                    <Label htmlFor="reminderEndTime" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                      End Time
-                    </Label>
-                    <input
-                      id="reminderEndTime"
-                      type="time"
-                      {...register("reminderEndTime")}
-                      className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
-                    />
-                  </div>
+          {/* 1. ONE_TIME Task Fields */}
+          {selectedTaskType === "ONE_TIME" && (
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-4">
+              <h4 className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                <span>Schedule & One-Time Reminder</span>
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="dueDate" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    Due Date
+                  </Label>
+                  <input
+                    id="dueDate"
+                    type="date"
+                    {...register("dueDate")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+                  />
                 </div>
-
-                {watchReminderInterval === "CUSTOM" && (
-                  <div className="space-y-1 max-w-xs">
-                    <Label htmlFor="customReminderIntervalMinutes" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                      Custom Interval (Minutes)
-                    </Label>
-                    <input
-                      id="customReminderIntervalMinutes"
-                      type="number"
-                      min={1}
-                      max={1440}
-                      {...register("customReminderIntervalMinutes", { valueAsNumber: true })}
-                      placeholder="e.g. 45"
-                      className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
-                    />
-                  </div>
-                )}
+                <div className="space-y-1">
+                  <Label htmlFor="dueTime" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    Due Time
+                  </Label>
+                  <input
+                    id="dueTime"
+                    type="time"
+                    {...register("dueTime")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="reminderSetting" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    Reminder
+                  </Label>
+                  <select
+                    id="reminderSetting"
+                    {...register("reminderSetting")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
+                  >
+                    <option value="NONE">None</option>
+                    <option value="AT_DUE_TIME">At Due Time</option>
+                    <option value="5_MIN">5 Minutes Before</option>
+                    <option value="15_MIN">15 Minutes Before</option>
+                    <option value="30_MIN">30 Minutes Before</option>
+                    <option value="1_HOUR">1 Hour Before</option>
+                    <option value="1_DAY">1 Day Before</option>
+                  </select>
+                </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* SECTION 5: Subtask Checklist */}
+          {/* 2. DAILY Habit Fields */}
+          {selectedTaskType === "DAILY" && (
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-4">
+              <h4 className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                <Repeat className="w-4 h-4 text-emerald-500" />
+                <span>Daily Habit & Interval Reminder Schedule</span>
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="startDate" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    Start Date
+                  </Label>
+                  <input
+                    id="startDate"
+                    type="date"
+                    {...register("startDate")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="reminderStartTime" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    Start Time
+                  </Label>
+                  <input
+                    id="reminderStartTime"
+                    type="time"
+                    {...register("reminderStartTime")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="reminderEndTime" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    End Time
+                  </Label>
+                  <input
+                    id="reminderEndTime"
+                    type="time"
+                    {...register("reminderEndTime")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="reminderInterval" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    Reminder Interval
+                  </Label>
+                  <select
+                    id="reminderInterval"
+                    {...register("reminderInterval")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
+                  >
+                    <option value="30_MIN">Every 30 Minutes</option>
+                    <option value="1_HOUR">Every 1 Hour</option>
+                    <option value="2_HOURS">Every 2 Hours</option>
+                    <option value="4_HOURS">Every 4 Hours</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 3. WEEKLY Task Fields */}
+          {selectedTaskType === "WEEKLY" && (
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-4">
+              <h4 className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-blue-500" />
+                <span>Weekly Task Schedule</span>
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    Day of Week
+                  </Label>
+                  <select
+                    value={dayOfWeek}
+                    onChange={(e) => setDayOfWeek(e.target.value)}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
+                  >
+                    <option value="Monday">Monday</option>
+                    <option value="Tuesday">Tuesday</option>
+                    <option value="Wednesday">Wednesday</option>
+                    <option value="Thursday">Thursday</option>
+                    <option value="Friday">Friday</option>
+                    <option value="Saturday">Saturday</option>
+                    <option value="Sunday">Sunday</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="dueTime" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    Time
+                  </Label>
+                  <input
+                    id="dueTime"
+                    type="time"
+                    {...register("dueTime")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="reminderSetting" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    Reminder
+                  </Label>
+                  <select
+                    id="reminderSetting"
+                    {...register("reminderSetting")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
+                  >
+                    <option value="NONE">None</option>
+                    <option value="AT_DUE_TIME">At Due Time</option>
+                    <option value="1_HOUR">1 Hour Before</option>
+                    <option value="1_DAY">1 Day Before</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 4. MONTHLY Task Fields */}
+          {selectedTaskType === "MONTHLY" && (
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-4">
+              <h4 className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-amber-500" />
+                <span>Monthly Task Schedule</span>
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    Day of Month
+                  </Label>
+                  <select
+                    value={dayOfMonth}
+                    onChange={(e) => setDayOfMonth(Number(e.target.value))}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
+                  >
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                      <option key={d} value={d}>
+                        {d}{d === 1 ? "st" : d === 2 ? "nd" : d === 3 ? "rd" : "th"} of month
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="dueTime" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    Time
+                  </Label>
+                  <input
+                    id="dueTime"
+                    type="time"
+                    {...register("dueTime")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="reminderSetting" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    Reminder
+                  </Label>
+                  <select
+                    id="reminderSetting"
+                    {...register("reminderSetting")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
+                  >
+                    <option value="NONE">None</option>
+                    <option value="AT_DUE_TIME">At Due Time</option>
+                    <option value="1_DAY">1 Day Before</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 5. YEARLY Reminder Fields */}
+          {selectedTaskType === "YEARLY" && (
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-4">
+              <h4 className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-rose-500" />
+                <span>Yearly Reminder Schedule</span>
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="dueDate" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    Date
+                  </Label>
+                  <input
+                    id="dueDate"
+                    type="date"
+                    {...register("dueDate")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="dueTime" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    Time
+                  </Label>
+                  <input
+                    id="dueTime"
+                    type="time"
+                    {...register("dueTime")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="reminderSetting" className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    Reminder
+                  </Label>
+                  <select
+                    id="reminderSetting"
+                    {...register("reminderSetting")}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
+                  >
+                    <option value="NONE">None</option>
+                    <option value="AT_DUE_TIME">At Due Time</option>
+                    <option value="1_DAY">1 Day Before</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Subtask Checklist */}
           <div className="space-y-2 pt-1">
             <div className="flex items-center justify-between">
               <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
@@ -876,7 +1065,6 @@ export function TodoDialog({
               )}
             </div>
 
-            {/* Progress Bar */}
             {totalChecklistItems > 0 && (
               <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
                 <div
@@ -886,7 +1074,6 @@ export function TodoDialog({
               </div>
             )}
 
-            {/* Subtask Items List */}
             <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
               {checklist.map((item) => (
                 <div
@@ -922,7 +1109,6 @@ export function TodoDialog({
               ))}
             </div>
 
-            {/* Add Subtask Input */}
             <div className="flex gap-2">
               <input
                 type="text"
@@ -948,56 +1134,58 @@ export function TodoDialog({
             </div>
           </div>
 
-          {/* SECTION 6: Tags */}
-          <div className="space-y-2">
-            <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-              <Tag className="w-3.5 h-3.5 text-sky-500" />
-              <span>Tags</span>
-            </Label>
+          {/* Tags (For ONE_TIME tasks) */}
+          {selectedTaskType === "ONE_TIME" && (
+            <div className="space-y-2">
+              <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <Tag className="w-3.5 h-3.5 text-sky-500" />
+                <span>Tags</span>
+              </Label>
 
-            <div className="flex flex-wrap gap-1.5">
-              {tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="px-2.5 py-1 rounded-lg bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800/80 text-xs font-semibold flex items-center gap-1"
-                >
-                  #{tag}
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveTag(tag)}
-                    className="hover:text-rose-500 cursor-pointer"
+              <div className="flex flex-wrap gap-1.5">
+                {tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="px-2.5 py-1 rounded-lg bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800/80 text-xs font-semibold flex items-center gap-1"
                   >
-                    <X className="w-3 h-3" />
-                  </button>
-                </span>
-              ))}
-            </div>
+                    #{tag}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTag(tag)}
+                      className="hover:text-rose-500 cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
 
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newTagInput}
-                onChange={(e) => setNewTagInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleAddTag();
-                  }
-                }}
-                placeholder="Add tag (e.g. AWS, React)..."
-                className="flex-1 h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-slate-50/50 dark:bg-slate-800/50 outline-none focus:ring-2 focus:ring-purple-500"
-              />
-              <button
-                type="button"
-                onClick={handleAddTag}
-                className="px-3 h-9 bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-300 hover:bg-sky-100 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-              >
-                Add Tag
-              </button>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newTagInput}
+                  onChange={(e) => setNewTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddTag();
+                    }
+                  }}
+                  placeholder="Add tag (e.g. AWS, React)..."
+                  className="flex-1 h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs bg-slate-50/50 dark:bg-slate-800/50 outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddTag}
+                  className="px-3 h-9 bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-300 hover:bg-sky-100 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Add Tag
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* SECTION 7: Notes */}
+          {/* Notes */}
           <div className="space-y-1.5">
             <Label htmlFor="notes" className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
               <StickyNote className="w-3.5 h-3.5 text-amber-500" />
@@ -1007,55 +1195,56 @@ export function TodoDialog({
               id="notes"
               rows={2}
               {...register("notes")}
-              placeholder='Optional extra notes (e.g. "Deploy to the UAT environment before production.")'
+              placeholder='Optional extra notes (e.g. "Deploy to UAT environment before production.")'
               className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs bg-slate-50/50 dark:bg-slate-800/50 outline-none focus:ring-2 focus:ring-purple-500"
             />
           </div>
 
-          {/* SECTION 8: File Attachments */}
-          <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-            <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-              <Paperclip className="w-3.5 h-3.5 text-indigo-500" />
-              <span>Attachments (Images, PDF, Word, Excel, ZIP)</span>
-            </Label>
-            <FileUpload
-              onFilesSelected={async (fileList) => {
-                try {
-                  await uploadFiles(fileList);
-                } catch (err) {
-                  toast.error("Failed to upload attachment");
-                }
-              }}
-              progress={progress}
-              isUploading={isUploading}
-              disabled={mutation.isPending}
-            />
-            <FileList
-              files={files as any}
-              onDownload={async (key) => {
-                try {
-                  const url = await storageRepository.getFileUrl(key);
-                  window.open(url, "_blank");
-                } catch (e) {
-                  toast.error("Failed to fetch file");
-                }
-              }}
-              onDelete={async (key) => {
-                try {
-                  await removeFile(key);
-                  toast.success("File removed");
-                } catch (e) {
-                  toast.error("Failed to remove file");
-                }
-              }}
-              disabled={mutation.isPending}
-            />
-          </div>
+          {/* Attachments (For ONE_TIME tasks) */}
+          {selectedTaskType === "ONE_TIME" && (
+            <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <Paperclip className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Attachments (Images, PDF, Word, Excel, ZIP)</span>
+              </Label>
+              <FileUpload
+                onFilesSelected={async (fileList) => {
+                  try {
+                    await uploadFiles(fileList);
+                  } catch (err) {
+                    toast.error("Failed to upload attachment");
+                  }
+                }}
+                progress={progress}
+                isUploading={isUploading}
+                disabled={mutation.isPending}
+              />
+              <FileList
+                files={files as any}
+                onDownload={async (key) => {
+                  try {
+                    const url = await storageRepository.getFileUrl(key);
+                    window.open(url, "_blank");
+                  } catch (e) {
+                    toast.error("Failed to fetch file");
+                  }
+                }}
+                onDelete={async (key) => {
+                  try {
+                    await removeFile(key);
+                    toast.success("File removed");
+                  } catch (e) {
+                    toast.error("Failed to remove file");
+                  }
+                }}
+                disabled={mutation.isPending}
+              />
+            </div>
+          )}
 
           {/* FOOTER BUTTONS: Cancel, Reset, Create Task */}
           <DialogFooter className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-row items-center justify-between gap-2 w-full">
             <div className="flex items-center gap-2">
-              {/* Reset Button */}
               <button
                 type="button"
                 onClick={handleResetForm}
@@ -1066,7 +1255,6 @@ export function TodoDialog({
                 <span>Reset</span>
               </button>
 
-              {/* Delete Button (If Editing) */}
               {isEditing && (
                 <button
                   type="button"
@@ -1085,7 +1273,6 @@ export function TodoDialog({
             </div>
 
             <div className="flex items-center gap-2">
-              {/* Cancel Button */}
               <button
                 type="button"
                 onClick={() => onOpenChange(false)}
@@ -1094,7 +1281,6 @@ export function TodoDialog({
                 Cancel
               </button>
 
-              {/* Create Task Button */}
               <button
                 type="submit"
                 disabled={mutation.isPending || isUploading || !isValid}
@@ -1115,6 +1301,7 @@ export function TodoDialog({
             </div>
           </DialogFooter>
         </form>
+        )}
       </DialogContent>
     </Dialog>
   );
