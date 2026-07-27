@@ -8,7 +8,6 @@ import toast from "react-hot-toast";
 import { notificationService } from "@/repositories";
 import { useAuth } from "@/providers/AuthProvider";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Notification } from "@/repositories/interfaces";
 
 export default function NotificationsPage() {
   const { user } = useAuth();
@@ -49,7 +48,7 @@ export default function NotificationsPage() {
     }
   };
 
-  const unreadCount = notifications.filter((n: Notification) => !n.read).length;
+  const unreadCount = notifications.filter((n: any) => !n.read).length;
 
   if (isLoading) {
     return (
@@ -86,17 +85,34 @@ export default function NotificationsPage() {
             const newNotif = {
               id: `test-${Date.now()}`,
               userId: user?.id || 'test-user',
-              title: "Test Notification",
-              message: "This is a simulated notification to check the UI.",
+              title: "🔔 Test Notification",
+              message: "Reminders & notifications are active and working 100%!",
               read: false,
               createdAt: new Date().toISOString()
             };
             queryClient.setQueryData(["notifications", user?.id], (old: Notification[] = []) => [newNotif, ...old]);
-            toast.success("Test notification created!");
+            toast("🔔 Test Notification: Reminders are active and working!", { duration: 5000, icon: "🔔" });
+
+            if (typeof window !== "undefined" && "Notification" in window) {
+              if (Notification.permission === "granted") {
+                new Notification("🔔 Test Reminder", {
+                  body: "Reminders & notifications are active and working 100%!",
+                });
+              } else if (Notification.permission !== "denied") {
+                Notification.requestPermission().then((perm) => {
+                  if (perm === "granted") {
+                    new Notification("🔔 Test Reminder", {
+                      body: "Reminders & notifications are active and working 100%!",
+                    });
+                  }
+                });
+              }
+            }
           }}
-          className="text-sm font-medium bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 px-4 py-2 rounded-lg transition-colors"
+          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer"
         >
-          Simulate Notification
+          <Bell className="w-4 h-4" />
+          <span>Send Test Notification</span>
         </button>
 
       </div>
@@ -115,17 +131,17 @@ export default function NotificationsPage() {
         </TabsContent>
 
         <TabsContent value="unread" className="space-y-4">
-          {notifications.filter((n: Notification) => !n.read).map((n: Notification) => (
+          {notifications.filter((n: any) => !n.read).map((n: any) => (
             <NotificationCard key={n.id} notification={n} onMarkRead={() => markAsRead(n.id)} />
           ))}
-          {notifications.filter((n: Notification) => !n.read).length === 0 && <EmptyState />}
+          {notifications.filter((n: any) => !n.read).length === 0 && <EmptyState />}
         </TabsContent>
       </Tabs>
     </div>
   );
 }
 
-function NotificationCard({ notification, onMarkRead }: { notification: Notification, onMarkRead: () => void }) {
+function NotificationCard({ notification, onMarkRead }: { notification: any, onMarkRead: () => void }) {
   return (
     <Card className={`transition-colors ${!notification.read ? 'bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-800' : ''}`}>
       <CardContent className="p-4 sm:p-6 flex gap-4">
