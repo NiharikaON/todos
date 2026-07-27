@@ -665,6 +665,8 @@ export default function CalendarPage() {
               center: "title",
               right: "dayGridMonth,listWeek",
             }}
+            showNonCurrentDates={false}
+            fixedWeekCount={false}
             events={events}
             dayMaxEvents={2}
             editable={true}
