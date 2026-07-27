@@ -277,7 +277,6 @@ export default function CalendarPage() {
       }
 
       const start = task.startDate ? new Date(task.startDate) : new Date(task.dueDate as string || new Date());
-      const end = task.endDate ? new Date(task.endDate) : new Date(start.getTime() + 60 * 60 * 1000);
       const hasExplicitTime = !!(task.startTime || task.dueTime);
 
       const baseEvent: any = {
@@ -323,18 +322,21 @@ export default function CalendarPage() {
         rruleCode = "FREQ=YEARLY";
       }
 
+      const eventTargetDate = task.dueDate ? new Date(task.dueDate) : (task.startDate ? new Date(task.startDate) : new Date());
+      const end = task.endDate ? new Date(task.endDate) : new Date(eventTargetDate.getTime() + 60 * 60 * 1000);
+
       if (rruleCode && rruleCode !== "NONE") {
-        const dateOnlyStr = task.startDate ? task.startDate.slice(0, 10).replace(/-/g, "") : (task.dueDate ? task.dueDate.slice(0, 10).replace(/-/g, "") : "");
+        const dateOnlyStr = task.dueDate ? task.dueDate.slice(0, 10).replace(/-/g, "") : (task.startDate ? task.startDate.slice(0, 10).replace(/-/g, "") : "");
         if (!hasExplicitTime && dateOnlyStr) {
           baseEvent.rrule = `DTSTART:${dateOnlyStr}\nRRULE:${rruleCode}`;
         } else {
-          baseEvent.rrule = `DTSTART:${start.toISOString().replace(/[-:]/g, "").split('.')[0]}Z\nRRULE:${rruleCode}`;
+          baseEvent.rrule = `DTSTART:${eventTargetDate.toISOString().replace(/[-:]/g, "").split('.')[0]}Z\nRRULE:${rruleCode}`;
         }
       } else {
         if (!hasExplicitTime) {
-          baseEvent.start = task.startDate ? task.startDate.slice(0, 10) : (task.dueDate ? task.dueDate.slice(0, 10) : start.toISOString().slice(0, 10));
+          baseEvent.start = task.dueDate ? task.dueDate.slice(0, 10) : (task.startDate ? task.startDate.slice(0, 10) : eventTargetDate.toISOString().slice(0, 10));
         } else {
-          baseEvent.start = start.toISOString();
+          baseEvent.start = eventTargetDate.toISOString();
           baseEvent.end = end.toISOString();
         }
       }

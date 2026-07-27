@@ -260,8 +260,10 @@ export default function DashboardPage() {
       if (activeTaskTab === "ALL") return true;
       if (activeTaskTab === "COMPLETED") return t.status === "COMPLETED";
       if (activeTaskTab === "TODAY") {
-        const due = t.endDate || t.dueDate || t.startDate;
-        return due && due.startsWith(todayStr);
+        const dueStr = t.dueDate ? t.dueDate.slice(0, 10) : "";
+        const startStr = t.startDate ? t.startDate.slice(0, 10) : "";
+        const createdStr = t.createdAt ? t.createdAt.slice(0, 10) : "";
+        return dueStr === todayStr || startStr === todayStr || createdStr === todayStr;
       }
       if (activeTaskTab === "UPCOMING") {
         const due = t.endDate || t.dueDate;
@@ -640,17 +642,12 @@ export default function DashboardPage() {
                       <Calendar className="w-3.5 h-3.5 text-slate-400" />
                       <span>
                         {(() => {
-                          const dateRaw = t.dueDate || t.endDate || t.startDate;
-                          if (!dateRaw) return "No due date";
-                          try {
-                            return new Date(dateRaw).toLocaleDateString("en-US", {
-                              month: "short",
-                              day: "numeric",
-                              year: "numeric",
-                            });
-                          } catch {
-                            return "No due date";
+                          const startStr = t.startDate ? new Date(t.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
+                          const dueStr = t.dueDate ? new Date(t.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
+                          if (startStr && dueStr && t.startDate.slice(0, 10) !== t.dueDate.slice(0, 10)) {
+                            return `Created: ${startStr} • Due: ${dueStr}`;
                           }
+                          return dueStr ? `Due: ${dueStr}` : (startStr ? `Created: ${startStr}` : "No due date");
                         })()}
                       </span>
                     </div>
