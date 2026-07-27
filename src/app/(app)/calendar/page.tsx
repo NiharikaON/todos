@@ -288,12 +288,15 @@ export default function CalendarPage() {
     // Background Color Determination
     let bg = "#3b82f6"; // Default Pending (Blue)
     if (isRecurring) {
-      if (isFutureInstance) {
-        bg = "#3b82f6"; // Future occurrences are pending (Blue)
-      } else if (task?.status === "COMPLETED") {
-        bg = "#10b981"; // Past/today completed instance (Green)
-      } else if (task?.status === "IN_PROGRESS") {
+      const taskDueMs = task?.dueDate ? new Date(task.dueDate).getTime() : (task?.startDate ? new Date(task.startDate).getTime() : 0);
+      const isSpecificInstance = taskDueMs ? Math.abs(eventDate - taskDueMs) < 24 * 60 * 60 * 1000 : false;
+
+      if (task?.status === "COMPLETED" && isSpecificInstance) {
+        bg = "#10b981"; // Only the specific completed date turns Green
+      } else if (task?.status === "IN_PROGRESS" && isSpecificInstance) {
         bg = "#8b5cf6"; // In Progress (Purple)
+      } else {
+        bg = "#3b82f6"; // All other projected recurring days stay Blue
       }
     } else {
       if (task?.status === "COMPLETED") {
