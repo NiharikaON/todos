@@ -212,6 +212,27 @@ export function TodoDialog({
         let startDateVal = taskToEdit.startDate ? taskToEdit.startDate.slice(0, 10) : "";
         let dueDateVal = taskToEdit.dueDate ? taskToEdit.dueDate.slice(0, 10) : taskToEdit.endDate ? taskToEdit.endDate.slice(0, 10) : "";
 
+        let startTimeVal = taskToEdit.startTime || "";
+        if (!startTimeVal && taskToEdit.startDate && taskToEdit.startDate.includes("T")) {
+          const timePart = taskToEdit.startDate.split("T")[1]?.slice(0, 5);
+          if (timePart && timePart !== "00:00") {
+            startTimeVal = timePart;
+          }
+        }
+
+        let dueTimeVal = taskToEdit.dueTime || "";
+        if (!dueTimeVal && taskToEdit.dueDate && taskToEdit.dueDate.includes("T")) {
+          const timePart = taskToEdit.dueDate.split("T")[1]?.slice(0, 5);
+          if (timePart && timePart !== "23:59" && timePart !== "00:00") {
+            dueTimeVal = timePart;
+          }
+        } else if (!dueTimeVal && taskToEdit.endDate && taskToEdit.endDate.includes("T")) {
+          const timePart = taskToEdit.endDate.split("T")[1]?.slice(0, 5);
+          if (timePart && timePart !== "23:59" && timePart !== "00:00") {
+            dueTimeVal = timePart;
+          }
+        }
+
         reset({
           title: taskToEdit.title,
           description: taskToEdit.description || "",
@@ -220,8 +241,8 @@ export function TodoDialog({
           status: (taskToEdit.status as any) || "PENDING",
           startDate: startDateVal,
           dueDate: dueDateVal,
-          startTime: taskToEdit.startTime || "",
-          dueTime: taskToEdit.dueTime || "",
+          startTime: startTimeVal,
+          dueTime: dueTimeVal,
           reminderType: (taskToEdit.reminderType as any) || "NONE",
           reminderSetting: (taskToEdit.reminderSetting as any) || "NONE",
           reminderInterval: (taskToEdit.reminderInterval as any) || "2_HOURS",
@@ -258,12 +279,13 @@ export function TodoDialog({
         setLocalComments([]);
         reset({
           ...defaultFormValues,
-          dueDate: "",
+          startDate: initialDate ? initialDate.slice(0, 10) : "",
+          dueDate: initialDate ? initialDate.slice(0, 10) : "",
         });
         setInitialFiles([]);
       }
     }
-  }, [taskToEdit, open, reset, setInitialFiles]);
+  }, [taskToEdit, open, reset, setInitialFiles, initialDate]);
 
   const handleSelectTaskType = (type: TaskType) => {
     setSelectedTaskType(type);
@@ -277,22 +299,18 @@ export function TodoDialog({
       setValue("repeat", "DAILY");
       setValue("reminderType", "REPEATING");
       setValue("reminderInterval", "2_HOURS");
-      if (!watch("startDate")) setValue("startDate", getTodayDateString());
     } else if (type === "WEEKLY") {
       setValue("repeat", "WEEKLY");
       setValue("reminderType", "ONE_TIME");
       setValue("reminderSetting", "1_HOUR");
-      if (!watch("startDate")) setValue("startDate", getTodayDateString());
     } else if (type === "MONTHLY") {
       setValue("repeat", "MONTHLY");
       setValue("reminderType", "ONE_TIME");
       setValue("reminderSetting", "1_DAY");
-      if (!watch("startDate")) setValue("startDate", getTodayDateString());
     } else if (type === "YEARLY") {
       setValue("repeat", "YEARLY");
       setValue("reminderType", "ONE_TIME");
       setValue("reminderSetting", "1_DAY");
-      if (!watch("startDate")) setValue("startDate", getTodayDateString());
     }
   };
 

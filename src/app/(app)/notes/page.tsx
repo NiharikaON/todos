@@ -22,10 +22,22 @@ import {
   MessageSquare, 
   Download, 
   Eye, 
-  Tag, 
-  CheckCircle2, 
-  AlertCircle 
+  Tag,
+  AlertCircle,
 } from "lucide-react";
+
+function formatTaskDateDisplay(dateStr?: string | null, timeStr?: string | null): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  const dateFormatted = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+
+  if (timeStr && timeStr.trim()) {
+    const [hr, min] = timeStr.split(":").map(Number);
+    const dateObj = new Date(d.getFullYear(), d.getMonth(), d.getDate(), hr, min);
+    return `${dateFormatted}, ${dateObj.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  }
+  return dateFormatted;
+}
 
 export default function NotesPage() {
   const { user } = useAuth();
@@ -248,9 +260,9 @@ export default function NotesPage() {
                     <div className="flex items-center gap-3 text-[11px] opacity-80 mb-3 font-medium">
                       <Clock className="w-3.5 h-3.5 shrink-0" />
                       <span>
-                        {task.startDate && `Start: ${new Date(task.startDate).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
+                        {task.startDate && `Start: ${formatTaskDateDisplay(task.startDate, task.startTime)}`}
                         {task.startDate && (task.endDate || task.dueDate) && " • "}
-                        {(task.endDate || task.dueDate) && `Due: ${new Date(task.endDate || task.dueDate!).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
+                        {(task.endDate || task.dueDate) && `Due: ${formatTaskDateDisplay(task.endDate || task.dueDate, task.dueTime)}`}
                       </span>
                     </div>
                   )}
