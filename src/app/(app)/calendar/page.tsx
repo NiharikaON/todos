@@ -291,6 +291,9 @@ export default function CalendarPage() {
         },
       };
 
+      const eventTargetDate = task.dueDate ? new Date(task.dueDate) : (task.startDate ? new Date(task.startDate) : new Date());
+      const end = task.endDate ? new Date(task.endDate) : new Date(eventTargetDate.getTime() + 60 * 60 * 1000);
+
       let rruleCode = task.recurrenceRule;
       const repeatType = task.repeat || (
         task.recurrenceRule?.includes("FREQ=DAILY") ? "DAILY" :
@@ -305,25 +308,26 @@ export default function CalendarPage() {
       } else if (repeatType === "WEEKDAYS") {
         rruleCode = "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR";
       } else if (repeatType === "WEEKLY") {
+        const days = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+        let byDay = "FR";
         if (task.dayOfWeek) {
           const dayMap: Record<string, string> = {
             SUNDAY: "SU", MONDAY: "MO", TUESDAY: "TU", WEDNESDAY: "WE",
             THURSDAY: "TH", FRIDAY: "FR", SATURDAY: "SA"
           };
-          const byDay = dayMap[String(task.dayOfWeek).toUpperCase()] || "FR";
-          rruleCode = `FREQ=WEEKLY;BYDAY=${byDay}`;
-        } else {
-          rruleCode = "FREQ=WEEKLY";
+          byDay = dayMap[String(task.dayOfWeek).toUpperCase()] || "FR";
+        } else if (task.dueDate) {
+          byDay = days[new Date(task.dueDate).getDay()];
         }
+        rruleCode = `FREQ=WEEKLY;BYDAY=${byDay}`;
       } else if (repeatType === "MONTHLY") {
-        const dom = task.dayOfMonth ? Number(task.dayOfMonth) : (start ? start.getDate() : 1);
+        const dom = task.dayOfMonth 
+          ? Number(task.dayOfMonth) 
+          : (task.dueDate ? new Date(task.dueDate).getDate() : (eventTargetDate ? eventTargetDate.getDate() : 1));
         rruleCode = `FREQ=MONTHLY;BYMONTHDAY=${dom}`;
       } else if (repeatType === "YEARLY") {
         rruleCode = "FREQ=YEARLY";
       }
-
-      const eventTargetDate = task.dueDate ? new Date(task.dueDate) : (task.startDate ? new Date(task.startDate) : new Date());
-      const end = task.endDate ? new Date(task.endDate) : new Date(eventTargetDate.getTime() + 60 * 60 * 1000);
 
       if (rruleCode && rruleCode !== "NONE") {
         const dateOnlyStr = task.dueDate ? task.dueDate.slice(0, 10).replace(/-/g, "") : (task.startDate ? task.startDate.slice(0, 10).replace(/-/g, "") : "");
