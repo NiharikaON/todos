@@ -292,13 +292,36 @@ export default function CalendarPage() {
         },
       };
 
-      const rruleCode = task.recurrenceRule || (
-        task.repeat === "DAILY" ? "FREQ=DAILY" :
-        task.repeat === "WEEKDAYS" ? "FREQ=WEEKDAYS" :
-        task.repeat === "WEEKLY" ? "FREQ=WEEKLY" :
-        task.repeat === "MONTHLY" ? "FREQ=MONTHLY" :
-        task.repeat === "YEARLY" ? "FREQ=YEARLY" : null
+      let rruleCode = task.recurrenceRule;
+      const repeatType = task.repeat || (
+        task.recurrenceRule?.includes("FREQ=DAILY") ? "DAILY" :
+        task.recurrenceRule?.includes("FREQ=WEEKDAYS") ? "WEEKDAYS" :
+        task.recurrenceRule?.includes("FREQ=WEEKLY") ? "WEEKLY" :
+        task.recurrenceRule?.includes("FREQ=MONTHLY") ? "MONTHLY" :
+        task.recurrenceRule?.includes("FREQ=YEARLY") ? "YEARLY" : "NONE"
       );
+
+      if (repeatType === "DAILY") {
+        rruleCode = "FREQ=DAILY";
+      } else if (repeatType === "WEEKDAYS") {
+        rruleCode = "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR";
+      } else if (repeatType === "WEEKLY") {
+        if (task.dayOfWeek) {
+          const dayMap: Record<string, string> = {
+            SUNDAY: "SU", MONDAY: "MO", TUESDAY: "TU", WEDNESDAY: "WE",
+            THURSDAY: "TH", FRIDAY: "FR", SATURDAY: "SA"
+          };
+          const byDay = dayMap[String(task.dayOfWeek).toUpperCase()] || "FR";
+          rruleCode = `FREQ=WEEKLY;BYDAY=${byDay}`;
+        } else {
+          rruleCode = "FREQ=WEEKLY";
+        }
+      } else if (repeatType === "MONTHLY") {
+        const dom = task.dayOfMonth ? Number(task.dayOfMonth) : (start ? start.getDate() : 1);
+        rruleCode = `FREQ=MONTHLY;BYMONTHDAY=${dom}`;
+      } else if (repeatType === "YEARLY") {
+        rruleCode = "FREQ=YEARLY";
+      }
 
       if (rruleCode && rruleCode !== "NONE") {
         const dateOnlyStr = task.startDate ? task.startDate.slice(0, 10).replace(/-/g, "") : (task.dueDate ? task.dueDate.slice(0, 10).replace(/-/g, "") : "");

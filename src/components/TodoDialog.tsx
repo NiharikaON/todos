@@ -469,15 +469,51 @@ export function TodoDialog({
         }, data.dueDate ? new Date(data.dueDate) : new Date());
       }
 
+      let effectiveStartDate = data.startDate;
+      let effectiveDueDate = data.dueDate;
+
+      if (selectedTaskType === "MONTHLY" || data.repeat === "MONTHLY") {
+        const targetDom = Number(dayOfMonth || taskToEdit?.dayOfMonth || 1);
+        const baseDate = effectiveStartDate ? new Date(effectiveStartDate) : (effectiveDueDate ? new Date(effectiveDueDate) : new Date());
+        let y = baseDate.getFullYear();
+        let m = baseDate.getMonth();
+        if (!effectiveStartDate && !effectiveDueDate && baseDate.getDate() > targetDom) {
+          m += 1;
+        }
+        const targetDateObj = new Date(y, m, targetDom);
+        const yStr = targetDateObj.getFullYear();
+        const mStr = String(targetDateObj.getMonth() + 1).padStart(2, "0");
+        const dStr = String(targetDateObj.getDate()).padStart(2, "0");
+        const adjustedDate = `${yStr}-${mStr}-${dStr}`;
+        if (!effectiveStartDate) effectiveStartDate = adjustedDate;
+        if (!effectiveDueDate) effectiveDueDate = adjustedDate;
+      }
+
+      let calculatedRrule = rruleMap[data.repeat] || null;
+      if (data.repeat === "MONTHLY") {
+        const dom = selectedTaskType === "MONTHLY" ? dayOfMonth : (taskToEdit?.dayOfMonth || 1);
+        calculatedRrule = `FREQ=MONTHLY;BYMONTHDAY=${dom}`;
+      } else if (data.repeat === "WEEKLY") {
+        const dow = selectedTaskType === "WEEKLY" ? dayOfWeek : (taskToEdit?.dayOfWeek || "Friday");
+        const dayMap: Record<string, string> = {
+          SUNDAY: "SU", MONDAY: "MO", TUESDAY: "TU", WEDNESDAY: "WE",
+          THURSDAY: "TH", FRIDAY: "FR", SATURDAY: "SA"
+        };
+        const byDay = dayMap[String(dow).toUpperCase()] || "FR";
+        calculatedRrule = `FREQ=WEEKLY;BYDAY=${byDay}`;
+      } else if (data.repeat === "WEEKDAYS") {
+        calculatedRrule = `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR`;
+      }
+
       const submitData: any = {
         title: data.title.trim(),
         description: data.description?.trim() || null,
         category: data.category,
         priority: data.priority,
         status: data.status,
-        startDate: formatIsoStart(data.startDate, data.startTime),
-        dueDate: formatIsoDue(data.dueDate, data.dueTime),
-        endDate: formatIsoDue(data.dueDate, data.dueTime),
+        startDate: formatIsoStart(effectiveStartDate, data.startTime),
+        dueDate: formatIsoDue(effectiveDueDate, data.dueTime),
+        endDate: formatIsoDue(effectiveDueDate, data.dueTime),
         startTime: data.startTime || null,
         dueTime: data.dueTime || null,
         taskType: selectedTaskType,
@@ -492,7 +528,7 @@ export function TodoDialog({
         dayOfMonth: selectedTaskType === "MONTHLY" ? dayOfMonth : null,
         nextReminderTime: nextRemTime,
         nextOccurrenceDate: nextOccDate,
-        recurrenceRule: rruleMap[data.repeat] || null,
+        recurrenceRule: calculatedRrule,
         checklist,
         labels: submitLabels,
         notes: data.notes?.trim() || null,
