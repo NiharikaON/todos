@@ -43,8 +43,17 @@ export default function CalendarPage() {
   const [priorityFilter, setPriorityFilter] = useState<string>("ALL");
   
   // New filters
-  const [selectedCategories, setSelectedCategories] = useState<string[]>(["Personal", "Work", "Other", "Shopping", "Health", "Finance"]);
-  const [showDailyHabits, setShowDailyHabits] = useState<boolean>(false);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([
+    "Personal",
+    "Work",
+    "Health",
+    "Finance",
+    "Shopping",
+    "Study",
+    "Others",
+    "Other",
+  ]);
+  const [showDailyHabits, setShowDailyHabits] = useState<boolean>(true);
   
   const [selectedDateStr, setSelectedDateStr] = useState<string | null>(null);
   const [jumpDate, setJumpDate] = useState("");
@@ -312,7 +321,7 @@ export default function CalendarPage() {
     );
   }
 
-  const allCategories = ["Personal", "Work", "Other", "Shopping", "Health", "Finance"];
+  const allCategories = ["Personal", "Work", "Health", "Finance", "Shopping", "Study", "Others", "Other"];
 
   const handleJumpToToday = () => {
     if (calendarRef.current) {
