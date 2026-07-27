@@ -1,21 +1,103 @@
 "use client";
 
 import { useState, useMemo, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import listPlugin from "@fullcalendar/list";
 import rrulePlugin from "@fullcalendar/rrule";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { todoRepository } from "@/repositories";
 import { Task } from "@/types";
 import { TodoDialog } from "@/components/TodoDialog";
-import toast from "react-hot-toast";
-import { Search, Filter, AlertTriangle, Plus, Calendar as CalendarIcon, Download, LayoutGrid, CheckCircle, Clock, MoreHorizontal, Eye, EyeOff } from "lucide-react";
-import { exportTasksToCSV, exportTasksToICS } from "@/utils/exportCalendar";
 import { MiniCalendar } from "@/components/calendar/MiniCalendar";
-import { WeeklyProductivityChart } from "@/components/calendar/WeeklyProductivityChart";
+import toast from "react-hot-toast";
+import { calculateNextOccurrenceDate } from "@/utils/reminderEngine";
+import { 
+  Calendar as CalendarIcon, 
+  Clock, 
+  Plus, 
+  Search, 
+  Filter, 
+  CheckCircle, 
+  AlertTriangle,
+  Eye,
+  EyeOff,
+  Check,
+  Edit2,
+  Trash2,
+  X,
+  Tag as TagIcon,
+  Paperclip,
+  CheckSquare,
+  Repeat,
+  Bell
+} from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+
+export function isTaskScheduledForDate(task: Task, targetDateStr: string): boolean {
+  if (!targetDateStr) return false;
+  const cleanTargetStr = targetDateStr.slice(0, 10);
+  const targetDate = new Date(cleanTargetStr);
+  targetDate.setHours(0, 0, 0, 0);
+  const targetTime = targetDate.getTime();
+
+  const startStr = task.startDate ? task.startDate.slice(0, 10) : task.dueDate ? task.dueDate.slice(0, 10) : null;
+  const dueStr = task.dueDate ? task.dueDate.slice(0, 10) : startStr;
+
+  if (startStr === cleanTargetStr || dueStr === cleanTargetStr) return true;
+
+  const repeat = task.repeat || (
+    task.recurrenceRule === "FREQ=DAILY" ? "DAILY" :
+    task.recurrenceRule === "FREQ=WEEKDAYS" ? "WEEKDAYS" :
+    task.recurrenceRule === "FREQ=WEEKLY" ? "WEEKLY" :
+    task.recurrenceRule === "FREQ=MONTHLY" ? "MONTHLY" :
+    task.recurrenceRule === "FREQ=YEARLY" ? "YEARLY" : "NONE"
+  );
+
+  if (repeat === "NONE") return false;
+
+  const startDate = startStr ? new Date(startStr) : new Date();
+  startDate.setHours(0, 0, 0, 0);
+
+  if (targetTime < startDate.getTime()) return false;
+
+  if (task.endDate) {
+    const endDate = new Date(task.endDate.slice(0, 10));
+    endDate.setHours(23, 59, 59, 999);
+    if (targetTime > endDate.getTime()) return false;
+  }
+
+  if (repeat === "DAILY") return true;
+
+  if (repeat === "WEEKDAYS") {
+    const day = targetDate.getDay();
+    return day >= 1 && day <= 5;
+  }
+
+  if (repeat === "WEEKLY") {
+    if (task.dayOfWeek) {
+      const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      const targetDayName = days[targetDate.getDay()];
+      return targetDayName.toLowerCase() === String(task.dayOfWeek).toLowerCase();
+    }
+    return targetDate.getDay() === startDate.getDay();
+  }
+
+  if (repeat === "MONTHLY") {
+    if (task.dayOfMonth) {
+      return targetDate.getDate() === Number(task.dayOfMonth);
+    }
+    return targetDate.getDate() === startDate.getDate();
+  }
+
+  if (repeat === "YEARLY") {
+    return targetDate.getMonth() === startDate.getMonth() && targetDate.getDate() === startDate.getDate();
+  }
+
+  return false;
+}
 
 function KpiCard({ title, value, icon: Icon, colorClass, onClick }: { title: string, value: number, icon: any, colorClass: string, onClick?: () => void }) {
   return (
@@ -42,7 +124,7 @@ export default function CalendarPage() {
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [priorityFilter, setPriorityFilter] = useState<string>("ALL");
   
-  // New filters
+  // Category Filters
   const [selectedCategories, setSelectedCategories] = useState<string[]>([
     "Personal",
     "Work",
@@ -56,81 +138,109 @@ export default function CalendarPage() {
   const [showDailyHabits, setShowDailyHabits] = useState<boolean>(true);
   
   const [selectedDateStr, setSelectedDateStr] = useState<string | null>(null);
-  const [jumpDate, setJumpDate] = useState("");
   const calendarRef = useRef<any>(null);
 
-  const { data: tasks = [], isLoading } = useQuery({
+  // Date Schedule Modal State
+  const [isDateScheduleModalOpen, setIsDateScheduleModalOpen] = useState(false);
+  const [clickedDateStr, setClickedDateStr] = useState<string>("");
+
+  // Drag & Drop Reschedule Modal State
+  const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false);
+  const [pendingReschedule, setPendingReschedule] = useState<{
+    task: Task;
+    newStart: string;
+    newEnd?: string;
+    revertFn: () => void;
+  } | null>(null);
+
+  // Fetch Tasks
+  const { data: tasks = [], isLoading } = useQuery<Task[]>({
     queryKey: ["tasks"],
     queryFn: () => todoRepository.getTasks(),
   });
 
+  // Update Task Mutation
   const updateTaskMutation = useMutation({
     mutationFn: ({ id, updates }: { id: string; updates: Partial<Task> }) =>
       todoRepository.updateTask(id, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      toast.success("Task updated");
+      toast.success("Task updated successfully!");
     },
-    onError: () => {
+    onError: (err) => {
       toast.error("Failed to update task");
+      console.error(err);
     },
   });
 
+  // Delete Task Mutation
+  const deleteTaskMutation = useMutation({
+    mutationFn: (id: string) => todoRepository.deleteTask(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      toast.success("Task deleted");
+    },
+    onError: () => toast.error("Failed to delete task"),
+  });
+
+  // Filter Tasks
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {
-      const matchesSearch =
-        searchQuery === "" ||
-        task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        task.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        task.labels?.some(l => l.toLowerCase().includes(searchQuery.toLowerCase()));
+      // 1. Search Query Filter
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        const matchesTitle = task.title.toLowerCase().includes(query);
+        const matchesDesc = task.description?.toLowerCase().includes(query) || false;
+        if (!matchesTitle && !matchesDesc) return false;
+      }
 
-      const matchesStatus = statusFilter === "ALL" || task.status === statusFilter;
-      const matchesPriority = priorityFilter === "ALL" || task.priority === priorityFilter;
-      
+      // 2. Status Filter
+      if (statusFilter !== "ALL" && task.status !== statusFilter) {
+        return false;
+      }
+
+      // 3. Priority Filter
+      if (priorityFilter !== "ALL" && task.priority !== priorityFilter) {
+        return false;
+      }
+
+      // 4. Category Filter
       const category = task.category || "Personal";
       const matchesCategory = selectedCategories.includes(category);
+      if (!matchesCategory) return false;
 
-      const isDailyHabit = task.recurrenceRule && (task.recurrenceRule === "FREQ=DAILY" || task.recurrenceRule === "FREQ=WEEKDAYS");
+      // 5. Daily Habits Toggle Filter
+      const isDailyHabit = (task.repeat === "DAILY" || task.repeat === "WEEKDAYS") ||
+        (task.recurrenceRule && (task.recurrenceRule === "FREQ=DAILY" || task.recurrenceRule === "FREQ=WEEKDAYS"));
       if (!showDailyHabits && isDailyHabit) {
         return false;
       }
 
-      return matchesSearch && matchesStatus && matchesPriority && matchesCategory && (task.dueDate || task.startDate);
+      return true;
     });
   }, [tasks, searchQuery, statusFilter, priorityFilter, selectedCategories, showDailyHabits]);
 
-  // KPI Calculations
+  // KPI Stats
   const kpiStats = useMemo(() => {
     const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const endOfToday = startOfToday + 24 * 60 * 60 * 1000 - 1;
+    const todayStr = now.toISOString().slice(0, 10);
+    const nowTime = now.getTime();
 
     let todayCount = 0;
     let upcomingCount = 0;
     let overdueCount = 0;
     let completedCount = 0;
 
-    tasks.forEach(task => {
-      const createdTime = task.createdAt ? new Date(task.createdAt).getTime() : 0;
-      const startTime = task.startDate ? new Date(task.startDate).getTime() : 0;
-      const dueTime = task.dueDate ? new Date(task.dueDate).getTime() : 0;
-
-      const isTaskToday = (createdTime >= startOfToday && createdTime <= endOfToday) ||
-                          (startTime >= startOfToday && startTime <= endOfToday) ||
-                          (dueTime >= startOfToday && dueTime <= endOfToday);
-
-      if (isTaskToday) {
-        todayCount++;
-      }
-
-      if (task.status === "COMPLETED") {
+    tasks.forEach(t => {
+      if (t.status === "COMPLETED") {
         completedCount++;
       } else {
-        if (dueTime && dueTime < startOfToday) {
-          overdueCount++;
-        } else if (dueTime && dueTime > endOfToday) {
-          upcomingCount++;
-        }
+        const startStr = t.startDate ? t.startDate.slice(0, 10) : t.dueDate ? t.dueDate.slice(0, 10) : "";
+        const due = t.dueDate ? new Date(t.dueDate).getTime() : null;
+
+        if (startStr === todayStr) todayCount++;
+        if (due && due > nowTime) upcomingCount++;
+        if (due && due < nowTime) overdueCount++;
       }
     });
 
@@ -145,16 +255,13 @@ export default function CalendarPage() {
       .slice(0, 5);
   }, [tasks]);
 
+  // Events Map for FullCalendar
   const events = useMemo(() => {
     const now = new Date().getTime();
 
     return filteredTasks.map((task) => {
-      // 3 distinct natural colors by status:
-      // PENDING / Todo -> #3B82F6 (Blue)
-      // IN_PROGRESS    -> #8B5CF6 (Purple)
-      // COMPLETED      -> #10B981 (Emerald Green)
       let backgroundColor = "#3b82f6";
-      const isRecurring = task.recurrenceRule && task.recurrenceRule !== "NONE";
+      const isRecurring = (task.repeat && task.repeat !== "NONE") || (task.recurrenceRule && task.recurrenceRule !== "NONE");
       if (!isRecurring && task.status === "COMPLETED") {
         backgroundColor = "#10b981";
       } else if (task.status === "IN_PROGRESS") {
@@ -162,15 +269,14 @@ export default function CalendarPage() {
       }
 
       let borderColor = backgroundColor;
-
       const due = task.dueDate ? new Date(task.dueDate).getTime() : null;
       const isOverdue = due ? (due < now && task.status !== "COMPLETED") : false;
 
       if (isOverdue) {
-        borderColor = "#ef4444"; // Red border for overdue
+        borderColor = "#ef4444";
       }
 
-      const start = task.startDate ? new Date(task.startDate) : new Date(task.dueDate as string);
+      const start = task.startDate ? new Date(task.startDate) : new Date(task.dueDate as string || new Date());
       const end = task.endDate ? new Date(task.endDate) : new Date(start.getTime() + 60 * 60 * 1000);
       const hasExplicitTime = !!(task.startTime || task.dueTime);
 
@@ -186,12 +292,20 @@ export default function CalendarPage() {
         },
       };
 
-      if (task.recurrenceRule && task.recurrenceRule !== "NONE") {
+      const rruleCode = task.recurrenceRule || (
+        task.repeat === "DAILY" ? "FREQ=DAILY" :
+        task.repeat === "WEEKDAYS" ? "FREQ=WEEKDAYS" :
+        task.repeat === "WEEKLY" ? "FREQ=WEEKLY" :
+        task.repeat === "MONTHLY" ? "FREQ=MONTHLY" :
+        task.repeat === "YEARLY" ? "FREQ=YEARLY" : null
+      );
+
+      if (rruleCode && rruleCode !== "NONE") {
         const dateOnlyStr = task.startDate ? task.startDate.slice(0, 10).replace(/-/g, "") : (task.dueDate ? task.dueDate.slice(0, 10).replace(/-/g, "") : "");
         if (!hasExplicitTime && dateOnlyStr) {
-          baseEvent.rrule = `DTSTART:${dateOnlyStr}\nRRULE:${task.recurrenceRule}`;
+          baseEvent.rrule = `DTSTART:${dateOnlyStr}\nRRULE:${rruleCode}`;
         } else {
-          baseEvent.rrule = `DTSTART:${start.toISOString().replace(/[-:]/g, "").split('.')[0]}Z\nRRULE:${task.recurrenceRule}`;
+          baseEvent.rrule = `DTSTART:${start.toISOString().replace(/[-:]/g, "").split('.')[0]}Z\nRRULE:${rruleCode}`;
         }
       } else {
         if (!hasExplicitTime) {
@@ -219,38 +333,38 @@ export default function CalendarPage() {
   };
 
   const handleEventDrop = (info: any) => {
-    if (!window.confirm("Are you sure you want to reschedule this task?")) {
-      info.revert();
-      return;
-    }
     const task = info.event.extendedProps.task as Task;
+    const isRecurring = (task.repeat && task.repeat !== "NONE") || (task.recurrenceRule && task.recurrenceRule !== "NONE");
+
     const newStart = info.event.start.toISOString();
     const newEnd = info.event.end ? info.event.end.toISOString() : undefined;
-    updateTaskMutation.mutate({ 
-      id: task.id, 
-      updates: { 
-        startDate: newStart, 
-        dueDate: newStart,
-        ...(newEnd && { endDate: newEnd })
-      } 
-    });
+
+    if (isRecurring) {
+      setPendingReschedule({
+        task,
+        newStart,
+        newEnd,
+        revertFn: () => info.revert(),
+      });
+      setIsRescheduleModalOpen(true);
+    } else {
+      if (!window.confirm("Are you sure you want to reschedule this task?")) {
+        info.revert();
+        return;
+      }
+      updateTaskMutation.mutate({ 
+        id: task.id, 
+        updates: { 
+          startDate: newStart, 
+          dueDate: newStart,
+          ...(newEnd && { endDate: newEnd })
+        } 
+      });
+    }
   };
 
   const handleEventResize = (info: any) => {
-    if (!window.confirm("Are you sure you want to resize this task?")) {
-      info.revert();
-      return;
-    }
-    const task = info.event.extendedProps.task as Task;
-    const newStart = info.event.start.toISOString();
-    const newEnd = info.event.end ? info.event.end.toISOString() : undefined;
-    updateTaskMutation.mutate({ 
-      id: task.id, 
-      updates: { 
-        startDate: newStart,
-        ...(newEnd && { endDate: newEnd })
-      } 
-    });
+    handleEventDrop(info);
   };
 
   const handleEventClick = (info: any) => {
@@ -261,14 +375,13 @@ export default function CalendarPage() {
   };
 
   const handleDateClick = (info: any) => {
-    setSelectedTask(null);
-    setSelectedDateStr(info.dateStr);
-    setIsDialogOpen(true);
+    setClickedDateStr(info.dateStr);
+    setIsDateScheduleModalOpen(true);
   };
 
   const renderEventContent = (eventInfo: any) => {
     const task = eventInfo.event.extendedProps?.task;
-    const isRecurring = task?.recurrenceRule && task.recurrenceRule !== "NONE";
+    const isRecurring = (task?.repeat && task.repeat !== "NONE") || (task?.recurrenceRule && task.recurrenceRule !== "NONE");
     const now = new Date().getTime();
 
     const targetEnd = task?.endDate 
@@ -278,25 +391,20 @@ export default function CalendarPage() {
       : 0;
 
     const eventDate = eventInfo.event.start ? new Date(eventInfo.event.start).getTime() : 0;
-    const startOfToday = new Date().setHours(0, 0, 0, 0);
     const endOfToday = new Date().setHours(23, 59, 59, 999);
-
-    const isTodayInstance = eventDate >= startOfToday && eventDate <= endOfToday;
-    const isFutureInstance = eventDate > endOfToday;
     const isTimePassed = targetEnd ? targetEnd < now : false;
 
-    // Background Color Determination
-    let bg = "#3b82f6"; // Default Pending (Blue)
+    let bg = "#3b82f6";
     if (isRecurring) {
       const taskDueMs = task?.dueDate ? new Date(task.dueDate).getTime() : (task?.startDate ? new Date(task.startDate).getTime() : 0);
       const isSpecificInstance = taskDueMs ? Math.abs(eventDate - taskDueMs) < 24 * 60 * 60 * 1000 : false;
 
       if (task?.status === "COMPLETED" && isSpecificInstance) {
-        bg = "#10b981"; // Only the specific completed date turns Green
+        bg = "#10b981";
       } else if (task?.status === "IN_PROGRESS" && isSpecificInstance) {
-        bg = "#8b5cf6"; // In Progress (Purple)
+        bg = "#8b5cf6";
       } else {
-        bg = "#3b82f6"; // All other projected recurring days stay Blue
+        bg = "#3b82f6";
       }
     } else {
       if (task?.status === "COMPLETED") {
@@ -306,8 +414,6 @@ export default function CalendarPage() {
       }
     }
 
-    // Overdue Determination:
-    // If task is not completed AND its scheduled end date/time has passed -> Overdue (Red ring & warning icon)
     const isOverdue = task?.status !== "COMPLETED" && (
       isRecurring 
         ? (isTimePassed && eventDate <= endOfToday) 
@@ -323,6 +429,64 @@ export default function CalendarPage() {
         {isOverdue && <span title="Overdue"><AlertTriangle className="w-3.5 h-3.5 text-white shrink-0 ml-1" /></span>}
       </div>
     );
+  };
+
+  const tasksOnClickedDate = useMemo(() => {
+    if (!clickedDateStr) return [];
+    return tasks.filter((t) => isTaskScheduledForDate(t, clickedDateStr));
+  }, [tasks, clickedDateStr]);
+
+  const handleToggleCompleteOnDate = (task: Task) => {
+    const isRecurring = (task.repeat && task.repeat !== "NONE") || (task.recurrenceRule && task.recurrenceRule !== "NONE");
+    if (isRecurring) {
+      const nextOcc = calculateNextOccurrenceDate(task, task.dueDate ? new Date(task.dueDate) : new Date());
+      updateTaskMutation.mutate({
+        id: task.id,
+        updates: {
+          status: "PENDING",
+          dueDate: nextOcc,
+          endDate: nextOcc,
+          startDate: nextOcc,
+          nextOccurrenceDate: calculateNextOccurrenceDate(task, new Date(nextOcc)),
+        },
+      });
+      toast.success("Recurring occurrence marked complete! Scheduled for next date.");
+    } else {
+      const newStatus = task.status === "COMPLETED" ? "PENDING" : "COMPLETED";
+      updateTaskMutation.mutate({
+        id: task.id,
+        updates: { status: newStatus },
+      });
+    }
+  };
+
+  const handleRescheduleChoice = (choice: "SINGLE" | "FUTURE" | "ALL") => {
+    if (!pendingReschedule) return;
+    const { task, newStart, newEnd } = pendingReschedule;
+
+    if (choice === "SINGLE") {
+      updateTaskMutation.mutate({
+        id: task.id,
+        updates: {
+          dueDate: newStart,
+          endDate: newEnd || newStart,
+        },
+      });
+      toast.success("Rescheduled single occurrence!");
+    } else if (choice === "FUTURE" || choice === "ALL") {
+      updateTaskMutation.mutate({
+        id: task.id,
+        updates: {
+          startDate: newStart,
+          dueDate: newStart,
+          endDate: newEnd || newStart,
+        },
+      });
+      toast.success(choice === "FUTURE" ? "Rescheduled future occurrences!" : "Rescheduled all occurrences!");
+    }
+
+    setIsRescheduleModalOpen(false);
+    setPendingReschedule(null);
   };
 
   if (isLoading) {
@@ -355,10 +519,10 @@ export default function CalendarPage() {
         <button 
           onClick={() => {
             setSelectedTask(null);
-            setSelectedDateStr(new Date().toISOString());
+            setSelectedDateStr(new Date().toISOString().slice(0, 10));
             setIsDialogOpen(true);
           }}
-          className="flex items-center justify-center w-full px-4 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition font-medium shadow-sm shadow-indigo-200 dark:shadow-none"
+          className="flex items-center justify-center w-full px-4 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition font-medium shadow-sm shadow-indigo-200 dark:shadow-none cursor-pointer"
         >
           <Plus className="w-5 h-5 mr-2" />
           Create Event
@@ -442,8 +606,6 @@ export default function CalendarPage() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col gap-6 min-w-0">
-        
-        {/* Top Action Bar */}
         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 bg-white dark:bg-gray-800 p-3 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm">
           <div className="relative w-full xl:w-64">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
@@ -481,8 +643,6 @@ export default function CalendarPage() {
               <option value="MEDIUM">Medium</option>
               <option value="LOW">Low</option>
             </select>
-            
-
           </div>
         </div>
 
@@ -494,7 +654,7 @@ export default function CalendarPage() {
           <KpiCard title="Completed" value={kpiStats.completed} icon={CheckCircle} colorClass="bg-green-500" onClick={() => setStatusFilter("COMPLETED")} />
         </div>
 
-        {/* FullCalendar */}
+        {/* FullCalendar Grid */}
         <div className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 calendar-container z-0 relative">
           <FullCalendar
             ref={calendarRef}
@@ -521,6 +681,214 @@ export default function CalendarPage() {
         </div>
       </div>
 
+      {/* Date Schedule Modal (Triggered when clicking any calendar date) */}
+      <Dialog open={isDateScheduleModalOpen} onOpenChange={setIsDateScheduleModalOpen}>
+        <DialogContent className="sm:max-w-[620px] max-h-[85vh] overflow-y-auto p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-2xl">
+          <DialogHeader className="pb-3 border-b border-slate-100 dark:border-slate-800 flex flex-row items-center justify-between">
+            <div>
+              <DialogTitle className="text-lg font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                <CalendarIcon className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                <span>Schedule for {clickedDateStr ? new Date(clickedDateStr).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : ""}</span>
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                {tasksOnClickedDate.length} {tasksOnClickedDate.length === 1 ? "task" : "tasks"} scheduled for this date.
+              </DialogDescription>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-3 py-3">
+            {tasksOnClickedDate.length === 0 ? (
+              <div className="text-center py-8 space-y-2">
+                <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">No tasks scheduled for this date.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDateScheduleModalOpen(false);
+                    setSelectedTask(null);
+                    setSelectedDateStr(clickedDateStr);
+                    setIsDialogOpen(true);
+                  }}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-xl text-xs font-bold hover:bg-purple-700 transition cursor-pointer"
+                >
+                  + Add Task for this Date
+                </button>
+              </div>
+            ) : (
+              tasksOnClickedDate.map((t) => {
+                const totalChecklist = t.checklist ? t.checklist.length : 0;
+                const completedChecklist = t.checklist ? t.checklist.filter(c => c.completed).length : 0;
+
+                return (
+                  <div
+                    key={t.id}
+                    className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 space-y-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleCompleteOnDate(t)}
+                          className="mt-0.5 cursor-pointer text-slate-400 hover:text-emerald-500 transition"
+                          title="Toggle Completion"
+                        >
+                          <CheckCircle className={`w-5 h-5 ${t.status === "COMPLETED" ? "text-emerald-500 fill-emerald-100" : ""}`} />
+                        </button>
+                        <div>
+                          <h4 className={`text-sm font-bold text-slate-900 dark:text-white ${t.status === "COMPLETED" ? "line-through text-slate-400" : ""}`}>
+                            {t.title}
+                          </h4>
+                          {t.description && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
+                              {t.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsDateScheduleModalOpen(false);
+                            setSelectedTask(t);
+                            setIsDialogOpen(true);
+                          }}
+                          className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 cursor-pointer"
+                          title="Edit Task"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteTaskMutation.mutate(t.id)}
+                          className="p-1.5 rounded-lg hover:bg-rose-100 text-rose-500 cursor-pointer"
+                          title="Delete Task"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Metadata Badges */}
+                    <div className="flex items-center gap-2 flex-wrap text-xs">
+                      <span className="px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-bold">
+                        {t.category || "Personal"}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-md font-bold ${
+                        t.priority === "HIGH" ? "bg-rose-100 text-rose-700" : t.priority === "MEDIUM" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
+                      }`}>
+                        {t.priority} Priority
+                      </span>
+                      {t.dueTime && (
+                        <span className="px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {t.dueTime}
+                        </span>
+                      )}
+                      {(t.repeat && t.repeat !== "NONE") && (
+                        <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 font-semibold flex items-center gap-1">
+                          <Repeat className="w-3 h-3" />
+                          {t.repeat}
+                        </span>
+                      )}
+                      {totalChecklist > 0 && (
+                        <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 font-semibold flex items-center gap-1">
+                          <CheckSquare className="w-3 h-3" />
+                          {completedChecklist}/{totalChecklist} Subtasks
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <DialogFooter className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-between">
+            <button
+              type="button"
+              onClick={() => {
+                setIsDateScheduleModalOpen(false);
+                setSelectedTask(null);
+                setSelectedDateStr(clickedDateStr);
+                setIsDialogOpen(true);
+              }}
+              className="px-4 py-2 bg-purple-600 text-white rounded-xl text-xs font-bold hover:bg-purple-700 transition cursor-pointer"
+            >
+              + Create Task for this Date
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsDateScheduleModalOpen(false)}
+              className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold cursor-pointer"
+            >
+              Close
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Drag & Drop Reschedule Prompt Modal */}
+      <Dialog open={isRescheduleModalOpen} onOpenChange={(open) => {
+        if (!open && pendingReschedule) pendingReschedule.revertFn();
+        setIsRescheduleModalOpen(open);
+      }}>
+        <DialogContent className="sm:max-w-[480px] p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-2xl">
+          <DialogHeader className="pb-3 border-b border-slate-100 dark:border-slate-800">
+            <DialogTitle className="text-lg font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+              <Repeat className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              <span>Reschedule Recurring Task</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              You are moving a recurring task. Which occurrences would you like to update?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-4">
+            <button
+              type="button"
+              onClick={() => handleRescheduleChoice("SINGLE")}
+              className="w-full p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-purple-500 dark:hover:border-purple-500 hover:bg-purple-50/50 dark:hover:bg-purple-950/20 text-left transition cursor-pointer"
+            >
+              <p className="text-xs font-bold text-slate-900 dark:text-white">🎯 This occurrence only</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Reschedules only this single date instance.</p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleRescheduleChoice("FUTURE")}
+              className="w-full p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-purple-500 dark:hover:border-purple-500 hover:bg-purple-50/50 dark:hover:bg-purple-950/20 text-left transition cursor-pointer"
+            >
+              <p className="text-xs font-bold text-slate-900 dark:text-white">⏩ This and future occurrences</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Reschedules from this date forward.</p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleRescheduleChoice("ALL")}
+              className="w-full p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-purple-500 dark:hover:border-purple-500 hover:bg-purple-50/50 dark:hover:bg-purple-950/20 text-left transition cursor-pointer"
+            >
+              <p className="text-xs font-bold text-slate-900 dark:text-white">🔁 All occurrences</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Updates the master task schedule.</p>
+            </button>
+          </div>
+
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => {
+                if (pendingReschedule) pendingReschedule.revertFn();
+                setIsRescheduleModalOpen(false);
+              }}
+              className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold cursor-pointer"
+            >
+              Cancel
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Task Creation & Edit Modal */}
       <TodoDialog
         open={isDialogOpen}
         onOpenChange={setIsDialogOpen}
