@@ -15,8 +15,23 @@ export class AmplifyDataAdapter {
       dueDate: appSyncTodo.dueDate || null,
       startDate: appSyncTodo.startDate || null,
       endDate: appSyncTodo.endDate || null,
-      startTime: appSyncTodo.startTime || (appSyncTodo.startDate && appSyncTodo.startDate.includes("T") ? appSyncTodo.startDate.split("T")[1]?.slice(0, 5) : null),
-      dueTime: appSyncTodo.dueTime || (appSyncTodo.dueDate && appSyncTodo.dueDate.includes("T") ? appSyncTodo.dueDate.split("T")[1]?.slice(0, 5) : null),
+      startTime: appSyncTodo.startTime || (appSyncTodo.startDate && appSyncTodo.startDate.includes("T") ? (() => {
+        const d = new Date(appSyncTodo.startDate);
+        if (isNaN(d.getTime())) return null;
+        const hrs = d.getHours();
+        const mins = d.getMinutes();
+        if (hrs === 0 && mins === 0) return null;
+        return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
+      })() : null),
+      dueTime: appSyncTodo.dueTime || (appSyncTodo.dueDate && appSyncTodo.dueDate.includes("T") ? (() => {
+        const d = new Date(appSyncTodo.dueDate);
+        if (isNaN(d.getTime())) return null;
+        const hrs = d.getHours();
+        const mins = d.getMinutes();
+        if (hrs === 23 && mins === 59) return null;
+        if (hrs === 0 && mins === 0) return null;
+        return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
+      })() : null),
       projectId: appSyncTodo.projectId || null,
       assigneeId: appSyncTodo.assigneeId || null,
       labels: appSyncTodo.labels || null,

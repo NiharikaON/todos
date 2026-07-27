@@ -214,23 +214,51 @@ export function TodoDialog({
 
         let startTimeVal = taskToEdit.startTime || "";
         if (!startTimeVal && taskToEdit.startDate && taskToEdit.startDate.includes("T")) {
-          const timePart = taskToEdit.startDate.split("T")[1]?.slice(0, 5);
-          if (timePart && timePart !== "00:00") {
-            startTimeVal = timePart;
+          const d = new Date(taskToEdit.startDate);
+          if (!isNaN(d.getTime())) {
+            const hrs = d.getHours();
+            const mins = d.getMinutes();
+            if (!(hrs === 0 && mins === 0)) {
+              startTimeVal = `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
+            }
           }
         }
 
         let dueTimeVal = taskToEdit.dueTime || "";
         if (!dueTimeVal && taskToEdit.dueDate && taskToEdit.dueDate.includes("T")) {
-          const timePart = taskToEdit.dueDate.split("T")[1]?.slice(0, 5);
-          if (timePart && timePart !== "23:59" && timePart !== "00:00") {
-            dueTimeVal = timePart;
+          const d = new Date(taskToEdit.dueDate);
+          if (!isNaN(d.getTime())) {
+            const hrs = d.getHours();
+            const mins = d.getMinutes();
+            if (!(hrs === 23 && mins === 59) && !(hrs === 0 && mins === 0)) {
+              dueTimeVal = `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
+            }
           }
         } else if (!dueTimeVal && taskToEdit.endDate && taskToEdit.endDate.includes("T")) {
-          const timePart = taskToEdit.endDate.split("T")[1]?.slice(0, 5);
-          if (timePart && timePart !== "23:59" && timePart !== "00:00") {
-            dueTimeVal = timePart;
+          const d = new Date(taskToEdit.endDate);
+          if (!isNaN(d.getTime())) {
+            const hrs = d.getHours();
+            const mins = d.getMinutes();
+            if (!(hrs === 23 && mins === 59) && !(hrs === 0 && mins === 0)) {
+              dueTimeVal = `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
+            }
           }
+        }
+
+        let detectedReminderType = taskToEdit.reminderType;
+        if (!detectedReminderType || (detectedReminderType as string) === "NONE") {
+          if (taskToEdit.reminderSetting && taskToEdit.reminderSetting !== "NONE") {
+            detectedReminderType = "ONE_TIME";
+          } else if (taskToEdit.reminderInterval) {
+            detectedReminderType = "REPEATING";
+          } else {
+            detectedReminderType = "NONE";
+          }
+        }
+
+        let detectedReminderSetting = taskToEdit.reminderSetting || "NONE";
+        if (detectedReminderSetting === "NONE" && detectedReminderType === "ONE_TIME") {
+          detectedReminderSetting = "1_DAY";
         }
 
         reset({
@@ -243,8 +271,8 @@ export function TodoDialog({
           dueDate: dueDateVal,
           startTime: startTimeVal,
           dueTime: dueTimeVal,
-          reminderType: (taskToEdit.reminderType as any) || "NONE",
-          reminderSetting: (taskToEdit.reminderSetting as any) || "NONE",
+          reminderType: detectedReminderType as any,
+          reminderSetting: detectedReminderSetting as any,
           reminderInterval: (taskToEdit.reminderInterval as any) || "2_HOURS",
           customReminderIntervalMinutes: taskToEdit.customReminderIntervalMinutes || 60,
           reminderStartTime: taskToEdit.reminderStartTime || "08:00",
