@@ -37,23 +37,46 @@ export function BrowserNotificationProvider({ children }: { children: React.Reac
       const now = new Date();
 
       tasks.forEach((task: Task) => {
-        // Only notify for pending or in progress tasks
         if (task.status === "COMPLETED") return;
+
+        // Smart Reminder Check via nextReminderTime
+        if (task.nextReminderTime) {
+          const nextRemMs = new Date(task.nextReminderTime).getTime();
+          const remDiff = now.getTime() - nextRemMs;
+          const notifKey = `${task.id}_${task.nextReminderTime}`;
+
+          if (remDiff >= 0 && remDiff < 180000 && !notifiedTasks.current.has(notifKey)) {
+            const notificationMsg = `🔔 Reminder: "${task.title}"`;
+            toast(notificationMsg, { duration: 6000, icon: '🔔' });
+
+            if (permission === "granted" && typeof window !== "undefined" && "Notification" in window) {
+              try {
+                new Notification("🔔 Task Reminder", {
+                  body: task.title,
+                });
+              } catch (err) {
+                console.error("Browser notification error:", err);
+              }
+            }
+
+            notifiedTasks.current.add(notifKey);
+          }
+        }
+
+        // Standard One-Time Fallback Check
         if (!task.endDate && !task.dueDate && !task.startDate) return;
         if (!task.reminderSetting || task.reminderSetting === "NONE") return;
 
-        // If we already notified for this task, skip it
         if (notifiedTasks.current.has(task.id)) return;
 
-        // Target End Date & Time (falling back to dueDate or startDate)
         const targetTimeStr = task.endDate || task.dueDate || task.startDate;
         if (!targetTimeStr) return;
         
         const targetTime = new Date(targetTimeStr).getTime();
         
-        // Calculate reminder time based on setting
         let offsetMs = 0;
         switch (task.reminderSetting) {
+          case "AT_DUE_TIME":
           case "0_MIN": offsetMs = 0; break;
           case "1_MIN": offsetMs = 1 * 60 * 1000; break;
           case "5_MIN": offsetMs = 5 * 60 * 1000; break;
@@ -66,7 +89,6 @@ export function BrowserNotificationProvider({ children }: { children: React.Reac
         const notifyTime = targetTime - offsetMs;
         const timeDiff = now.getTime() - notifyTime;
 
-        // Check if we are past the notification time (within a 2-minute window)
         if (timeDiff >= 0 && timeDiff < 120000) {
           let timeText = "";
           if (offsetMs === 0) timeText = "Due right now!";
@@ -77,13 +99,11 @@ export function BrowserNotificationProvider({ children }: { children: React.Reac
 
           const notificationMsg = `🔔 Task Reminder: "${task.title}" is ${timeText}`;
 
-          // In-App Toast
           toast(notificationMsg, {
             duration: 6000,
             icon: '🔔',
           });
 
-          // System Browser Notification
           if (permission === "granted" && typeof window !== "undefined" && "Notification" in window) {
             try {
               new Notification("🔔 Task End Date Reminder", {

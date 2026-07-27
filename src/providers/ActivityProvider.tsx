@@ -18,12 +18,14 @@ interface ActivityContextType {
   activities: ActivityItem[];
   logActivity: (item: Omit<ActivityItem, "timestamp" | "userId">) => void;
   clearActivities: () => void;
+  removeActivity: (id: string) => void;
 }
 
 const ActivityContext = createContext<ActivityContextType>({
   activities: [],
   logActivity: () => {},
   clearActivities: () => {},
+  removeActivity: () => {},
 });
 
 export function ActivityProvider({ children }: { children: React.ReactNode }) {
@@ -72,6 +74,18 @@ export function ActivityProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const removeActivity = (id: string) => {
+    setActivities((prev) => {
+      const updated = prev.filter((a) => a.id !== id);
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+      } catch (e) {
+        console.error("Failed to update activity history", e);
+      }
+      return updated;
+    });
+  };
+
   const clearActivities = () => {
     setActivities([]);
     try {
@@ -82,7 +96,7 @@ export function ActivityProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <ActivityContext.Provider value={{ activities, logActivity, clearActivities }}>
+    <ActivityContext.Provider value={{ activities, logActivity, clearActivities, removeActivity }}>
       {children}
     </ActivityContext.Provider>
   );

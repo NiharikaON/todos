@@ -1,229 +1,291 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, useMemo } from "react";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { todoRepository, projectRepository, storageRepository } from "@/repositories";
 import { useAuth } from "@/providers/AuthProvider";
-import { 
-  CheckCircle2, 
-  Clock, 
-  Activity,
-  ArrowRight,
-  Plus,
-  Download,
-  ArrowUpRight,
-  FolderKanban,
-  Layers,
-  AlertCircle,
-  Upload,
-  UserPlus,
-  FileText,
-  X,
-  Eye,
-  Paperclip,
-  Image,
-  Music,
-  Video,
-  UploadCloud,
-  Loader2,
-  FileSpreadsheet,
-  Archive,
-  Folder,
-  Edit2,
-  Trash2
-} from "lucide-react";
-import { DashboardChart } from "@/components/DashboardChart";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ProjectDialog } from "@/components/ProjectDialog";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Project } from "@/types";
+import { Task, Project, Attachment } from "@/types";
 import { useActivity } from "@/providers/ActivityProvider";
 import toast from "react-hot-toast";
 import Link from "next/link";
-import { useMutation } from "@tanstack/react-query";
+import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import { 
+  CheckCircle2, 
+  Clock, 
+  Plus, 
+  Folder, 
+  FileText, 
+  Edit2, 
+  Trash2, 
+  Calendar, 
+  ChevronDown, 
+  MoreVertical, 
+  Bell, 
+  CheckSquare, 
+  Paperclip, 
+  UploadCloud, 
+  X, 
+  Activity,
+  AlertCircle
+} from "lucide-react";
+import { ProjectDialog } from "@/components/ProjectDialog";
+import { TodoDialog } from "@/components/TodoDialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const { activities, logActivity } = useActivity();
+  const { activities, logActivity, clearActivities, removeActivity } = useActivity();
 
-  // Modal States
+  // Modal & Dropdown States
+  const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false);
+  const [taskToEdit, setTaskToEdit] = useState<Task | null>(null);
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
   const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
   const [isAddFilesDialogOpen, setIsAddFilesDialogOpen] = useState(false);
-  const [isAddMemberDialogOpen, setIsAddMemberDialogOpen] = useState(false);
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [activeTaskTab, setActiveTaskTab] = useState<"ALL" | "TODAY" | "UPCOMING" | "OVERDUE" | "COMPLETED">("ALL");
 
-  // Add Files State
+  // File upload state
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
-  const ACCEPTED_FILE_TYPES = ".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.jpeg,.jpg,.png,.webp,.mp3,.wav,.mp4,.mov,.avi,.mkv,.zip,.rar,.7z,.tar,.gz,.bz2,image/*,audio/*,video/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,text/csv,application/zip,application/x-zip-compressed,application/x-rar-compressed,application/x-7z-compressed,application/x-tar,application/gzip";
+  const ACCEPTED_FILE_TYPES = ".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.jpeg,.jpg,.png,.webp,.mp3,.wav,.mp4,.mov,.avi,.zip,.rar";
 
-  // Form States for Member Invite
-  const [memberName, setMemberName] = useState("");
-  const [memberEmail, setMemberEmail] = useState("");
-  const [memberRole, setMemberRole] = useState("Developer");
-
-  const { data: tasks, isLoading: tasksLoading } = useQuery({
+  // Data Fetching
+  const { data: tasks = [], isLoading: tasksLoading } = useQuery({
     queryKey: ["tasks"],
     queryFn: () => todoRepository.getTasks(),
   });
 
-  const { data: projects, isLoading: projectsLoading } = useQuery({
+  const { data: projects = [], isLoading: projectsLoading } = useQuery({
     queryKey: ["projects"],
     queryFn: () => projectRepository.getProjects(),
   });
 
-  // Project Actions (Edit & Delete)
-  const deleteProjectMutation = useMutation({
-    mutationFn: (id: string) => projectRepository.deleteProject(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
-      toast.success("Project deleted successfully");
-      setSelectedProject(null);
+  // Task Status Toggle Mutation
+  const toggleTaskMutation = useMutation({
+    mutationFn: async (task: Task) => {
+      const newStatus = task.status === "COMPLETED" ? "PENDING" : "COMPLETED";
+      const updated = await todoRepository.updateTask(task.id, { status: newStatus });
+      return { updated, newStatus };
+    },
+    onSuccess: ({ updated, newStatus }, task) => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      logActivity({
+        id: task.id,
+        title: task.title,
+        type: "task",
+        status: newStatus,
+        subtitle: newStatus === "COMPLETED" ? "Task completed" : "Task marked pending",
+        href: "/todos"
+      });
+      toast.success(newStatus === "COMPLETED" ? "Task marked completed!" : "Task marked pending!");
     },
     onError: () => {
-      toast.error("Failed to delete project");
+      toast.error("Failed to update task status");
     }
   });
 
-  const handleDeleteProject = (id: string, name: string) => {
-    if (confirm(`Are you sure you want to delete project "${name}"?`)) {
-      deleteProjectMutation.mutate(id);
-    }
-  };
-
-  const handleEditProject = (project: Project) => {
-    setSelectedProject(null);
-    setProjectToEdit(project);
-    setIsProjectDialogOpen(true);
-  };
-
-  // Handle Add Files selection
+  // Handle Drag & Drop Files
   const handleSelectFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const newFiles = Array.from(e.target.files);
-      setSelectedFiles((prev) => [...prev, ...newFiles]);
+      setSelectedFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
     }
   };
 
-  // Traverse dropped directory tree recursively
-  const traverseFileTree = (entry: any, fileList: File[]): Promise<void> => {
-    return new Promise((resolve) => {
-      if (entry.isFile) {
-        entry.file((file: File) => {
-          fileList.push(file);
-          resolve();
-        });
-      } else if (entry.isDirectory) {
-        const dirReader = entry.createReader();
-        dirReader.readEntries(async (entries: any[]) => {
-          for (const childEntry of entries) {
-            await traverseFileTree(childEntry, fileList);
-          }
-          resolve();
-        });
-      } else {
-        resolve();
-      }
-    });
-  };
-
-  // Handle Drag & Drop of Files and Folders
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const items = e.dataTransfer.items;
-    const extractedFiles: File[] = [];
-
-    if (items) {
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.kind === "file") {
-          const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
-          if (entry) {
-            await traverseFileTree(entry, extractedFiles);
-          } else {
-            const file = item.getAsFile();
-            if (file) extractedFiles.push(file);
-          }
-        }
-      }
-    } else if (e.dataTransfer.files) {
-      extractedFiles.push(...Array.from(e.dataTransfer.files));
-    }
-
-    if (extractedFiles.length > 0) {
-      setSelectedFiles((prev) => [...prev, ...extractedFiles]);
-    }
-  };
-
-  const handleRemoveFile = (index: number) => {
-    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  // Handle Add Files Submit
   const handleUploadFilesSubmit = async () => {
     if (selectedFiles.length === 0) {
-      toast.error("Please select at least one file or folder to upload.");
+      toast.error("Please select at least one file");
       return;
     }
-
     try {
       setIsUploadingFiles(true);
-      let count = 0;
-
       for (const file of selectedFiles) {
         const result = await storageRepository.uploadFile(file, "Global", user?.id || "anonymous");
         const formattedSize = file.size > 1024 * 1024 
           ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` 
           : `${Math.round(file.size / 1024)} KB`;
-        
-        let category = "Document";
-        const fileExt = file.name.split('.').pop()?.toLowerCase();
-        if (["zip", "rar", "7z", "tar", "gz", "bz2"].includes(fileExt || "") || file.type.includes("zip") || file.type.includes("compressed") || file.type.includes("tar")) {
-          category = "Zip / Archive";
-        } else if (file.type.startsWith("image/")) {
-          category = "Image";
-        } else if (file.type.startsWith("audio/")) {
-          category = "Audio";
-        } else if (file.type.startsWith("video/")) {
-          category = "Video";
-        }
-
         logActivity({
           id: result.key || file.name,
           title: file.name,
           type: "file",
-          subtitle: `${formattedSize} • ${category}`,
-          href: "#"
+          subtitle: `${formattedSize} • Workspace File`,
+          href: "/files"
         });
-        count++;
       }
-
-      toast.success(`Successfully added ${count} file${count === 1 ? '' : 's'} to workspace!`);
+      toast.success("Files uploaded successfully!");
       setSelectedFiles([]);
       setIsAddFilesDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
     } catch (err) {
-      console.error("Error uploading files:", err);
-      toast.error("Failed to upload files. Please try again.");
+      console.error(err);
+      toast.error("Failed to upload files");
     } finally {
       setIsUploadingFiles(false);
     }
   };
 
-  // Handle Add Member Submit
-  const handleAddMemberSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!memberEmail.trim()) {
-      toast.error("Please enter a valid email address.");
-      return;
-    }
+  // Calculations for Stat Cards & Donut Chart
+  const now = new Date();
+  const nowTime = now.getTime();
+  const todayStr = now.toISOString().split("T")[0];
 
-    toast.success(`Invitation sent to ${memberEmail} (${memberRole})!`);
-    setMemberName("");
-    setMemberEmail("");
-    setIsAddMemberDialogOpen(false);
+  const totalTasks = tasks.length;
+  const completedCount = tasks.filter(t => t.status === "COMPLETED").length;
+  const inProgressCount = tasks.filter(t => t.status === "IN_PROGRESS").length;
+  const pendingCount = tasks.filter(t => t.status === "PENDING").length;
+
+  const startOfTodayMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+  const overdueCount = useMemo(() => {
+    return tasks.filter(t => {
+      if (t.status === "COMPLETED") return false;
+      const dueRaw = t.dueDate || t.endDate;
+      if (!dueRaw) return false;
+      const dueMs = new Date(dueRaw).getTime();
+      return dueMs < startOfTodayMs;
+    }).length;
+  }, [tasks, startOfTodayMs]);
+
+  const effectiveTotal = tasks.length;
+  const completedPct = effectiveTotal > 0 ? ((completedCount / effectiveTotal) * 100).toFixed(0) : "0";
+  const inProgressPct = effectiveTotal > 0 ? ((inProgressCount / effectiveTotal) * 100).toFixed(0) : "0";
+  const pendingPct = effectiveTotal > 0 ? ((pendingCount / effectiveTotal) * 100).toFixed(0) : "0";
+
+  const donutData = effectiveTotal > 0 ? [
+    { name: "Completed", value: completedCount, color: "#22c55e" },
+    { name: "In Progress", value: inProgressCount, color: "#3b82f6" },
+    { name: "Pending", value: pendingCount, color: "#eab308" },
+  ] : [
+    { name: "Empty", value: 1, color: "#e2e8f0" }
+  ];
+
+  // Upcoming Deadlines List
+  const upcomingDeadlines = useMemo(() => {
+    return tasks
+      .filter(t => t.status !== "COMPLETED" && (t.endDate || t.dueDate || t.startDate))
+      .map(t => {
+        const dateRaw = t.endDate || t.dueDate || t.startDate;
+        const targetTime = new Date(dateRaw!).getTime();
+        const diffMs = targetTime - nowTime;
+        const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+        let badge = "";
+        let color = "bg-purple-100 text-purple-700";
+
+        if (diffDays < 0) {
+          badge = `Overdue by ${Math.abs(diffDays)}d`;
+          color = "bg-red-100 text-red-600";
+        } else if (diffDays === 0) {
+          badge = "Due Today";
+          color = "bg-red-100 text-red-600";
+        } else if (diffDays === 1) {
+          badge = "Tomorrow";
+          color = "bg-amber-100 text-amber-700";
+        } else {
+          badge = `${diffDays} days left`;
+          color = diffDays <= 3 ? "bg-red-100 text-red-600" : diffDays <= 5 ? "bg-sky-100 text-sky-700" : "bg-purple-100 text-purple-700";
+        }
+
+        const dateFormatted = new Date(dateRaw!).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+        return {
+          id: t.id,
+          title: t.title,
+          dateStr: dateFormatted,
+          badge,
+          color,
+          rawTask: t,
+        };
+      })
+      .slice(0, 4);
+  }, [tasks, nowTime]);
+
+  // Recent Activity Feed
+  const recentActivitiesList = useMemo(() => {
+    return activities.slice(0, 5).map(act => {
+      let icon = CheckSquare;
+      let iconBg = "bg-purple-600 text-white";
+      let badgeColor = "bg-purple-100 text-purple-700";
+      let badge = "Task Created";
+
+      if (act.type === "project") {
+        icon = Folder;
+        iconBg = "bg-sky-500 text-white";
+        badgeColor = "bg-sky-100 text-sky-700";
+        badge = "Project Created";
+      } else if (act.type === "file") {
+        icon = FileText;
+        iconBg = "bg-purple-600 text-white";
+        badgeColor = "bg-purple-100 text-purple-700";
+        badge = "File Uploaded";
+      } else if (act.status === "COMPLETED") {
+        icon = CheckCircle2;
+        iconBg = "bg-emerald-500 text-white";
+        badgeColor = "bg-emerald-100 text-emerald-700";
+        badge = "Task Completed";
+      } else if (act.title.toLowerCase().includes("reminder")) {
+        icon = Bell;
+        iconBg = "bg-amber-500 text-white";
+        badgeColor = "bg-amber-100 text-amber-700";
+        badge = "Reminder Triggered";
+      } else {
+        icon = Edit2;
+        iconBg = "bg-blue-500 text-white";
+        badgeColor = "bg-blue-100 text-blue-700";
+        badge = "Task Updated";
+      }
+
+      const minutes = Math.max(1, Math.floor((nowTime - new Date(act.timestamp).getTime()) / (1000 * 60)));
+      const timeStr = minutes < 60 ? `${minutes} minute${minutes === 1 ? "" : "s"} ago` : `${Math.floor(minutes / 60)} hour${Math.floor(minutes / 60) === 1 ? "" : "s"} ago`;
+
+      return {
+        id: act.id,
+        title: act.title,
+        subtitle: act.subtitle || "Workspace update",
+        time: timeStr,
+        badge,
+        badgeColor,
+        iconBg,
+        icon,
+      };
+    });
+  }, [activities, nowTime]);
+
+  // Filtered Tasks for My Tasks section
+  const filteredMyTasks = useMemo(() => {
+    return tasks.filter(t => {
+      if (activeTaskTab === "ALL") return true;
+      if (activeTaskTab === "COMPLETED") return t.status === "COMPLETED";
+      if (activeTaskTab === "TODAY") {
+        const due = t.endDate || t.dueDate || t.startDate;
+        return due && due.startsWith(todayStr);
+      }
+      if (activeTaskTab === "UPCOMING") {
+        const due = t.endDate || t.dueDate;
+        return t.status !== "COMPLETED" && due && new Date(due).getTime() >= nowTime;
+      }
+      if (activeTaskTab === "OVERDUE") {
+        const due = t.endDate || t.dueDate;
+        return t.status !== "COMPLETED" && due && new Date(due).getTime() < nowTime;
+      }
+      return true;
+    });
+  }, [tasks, activeTaskTab, todayStr, nowTime]);
+
+  const getPriorityPill = (priority: string) => {
+    switch (priority) {
+      case "HIGH":
+        return <span className="bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-300 text-xs font-semibold px-2.5 py-0.5 rounded-full">High</span>;
+      case "MEDIUM":
+        return <span className="bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 text-xs font-semibold px-2.5 py-0.5 rounded-full">Medium</span>;
+      case "LOW":
+        return <span className="bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-xs font-semibold px-2.5 py-0.5 rounded-full">Low</span>;
+      default:
+        return null;
+    }
   };
 
   if (tasksLoading || projectsLoading) {
@@ -231,254 +293,400 @@ export default function DashboardPage() {
       <div className="flex h-full items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
-          <p className="text-purple-600 dark:text-purple-400 font-medium animate-pulse">Loading workspace...</p>
+          <p className="text-purple-600 dark:text-purple-400 font-bold text-sm animate-pulse">Loading dashboard...</p>
         </div>
       </div>
     );
   }
 
-  const totalTasks = tasks?.length || 0;
-  const completedTasks = tasks?.filter(t => t.status === "COMPLETED").length || 0;
-  const inProgressTasks = tasks?.filter(t => t.status === "IN_PROGRESS").length || 0;
-  const pendingTasks = tasks?.filter(t => t.status !== "COMPLETED" && t.status !== "IN_PROGRESS").length || 0;
-
   return (
-    <div className="max-w-7xl mx-auto w-full flex-1 flex flex-col gap-4 pb-2 min-h-0">
-      {/* Header row */}
-      <div className="shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-sm">
+    <div className="max-w-7xl mx-auto w-full flex-1 flex flex-col gap-6 pb-8 min-h-0 text-slate-800 dark:text-slate-200">
+
+      {/* 1. Header Section - Dynamic Welcome back with User Name */}
+      <div className="shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black text-purple-900 dark:text-white tracking-tight leading-none">
-            Dashboard
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+            Welcome back, {user?.name || "Niharika"}! 👋
           </h1>
-          <p className="text-gray-500 dark:text-gray-400 font-medium text-[13px] mt-1">
-            Plan, prioritize, and accomplish your tasks with ease.
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mt-1">
+            Here's what's happening with your tasks today.
           </p>
         </div>
-        <div className="flex items-center space-x-3">
-          <button 
-            onClick={() => setIsProjectDialogOpen(true)}
-            className="flex items-center space-x-2 bg-purple-500 hover:bg-purple-600 active:scale-95 text-white px-4 py-2 rounded-full text-[13px] font-semibold transition-all shadow-sm shadow-purple-500/20 cursor-pointer"
+
+        <div className="shrink-0">
+          <button
+            onClick={() => {
+              setTaskToEdit(null);
+              setIsTaskDialogOpen(true);
+            }}
+            className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer active:scale-95 transition-transform shadow-sm"
           >
             <Plus className="w-4 h-4" />
-            <span>Add Project</span>
-          </button>
-          <button 
-            onClick={() => setIsAddFilesDialogOpen(true)}
-            className="flex items-center space-x-2 bg-white dark:bg-slate-800 border-2 border-purple-100 dark:border-slate-700 hover:border-purple-200 active:scale-95 text-purple-700 dark:text-purple-300 px-4 py-2 rounded-full text-[13px] font-semibold transition-all shadow-sm cursor-pointer"
-          >
-            <Paperclip className="w-4 h-4" />
-            <span>Add Files</span>
+            <span>Add Task</span>
           </button>
         </div>
       </div>
 
-      {/* Stats Row */}
-      <div className="shrink-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 h-[84px]">
-        {/* Total */}
-        <Link href="/todos?status=ALL" className="block h-full">
-          <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-gray-800 p-4 rounded-xl shadow-sm hover:shadow-md transition-shadow h-full flex items-center gap-4">
-            <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-xl flex items-center justify-center shrink-0">
-              <Layers className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+      {/* 2. Top 4 Stat Cards Grid: Total Tasks, Completed, Pending, In Progress */}
+      <div className="shrink-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        {/* Card 1: Total Tasks */}
+        <Link href="/todos?status=ALL" className="block">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 p-5 rounded-2xl shadow-xs hover:shadow-md transition-all flex items-center space-x-4">
+            <div className="w-14 h-14 rounded-2xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+              <FileText className="w-6 h-6" />
             </div>
             <div>
-              <div className="text-lg font-bold text-slate-800 dark:text-white leading-none">{totalTasks}</div>
-              <div className="text-xs text-gray-500 font-medium mt-1">Total Tasks</div>
+              <span className="text-xs font-semibold text-slate-400 block">Total Tasks</span>
+              <span className="text-2xl font-black text-slate-900 dark:text-white leading-tight block mt-0.5">{totalTasks}</span>
+              <span className="text-[11px] font-medium text-slate-400 block mt-0.5">All tasks</span>
             </div>
           </div>
         </Link>
+
+        {/* Card 2: Completed */}
+        <Link href="/todos?status=COMPLETED" className="block">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 p-5 rounded-2xl shadow-xs hover:shadow-md transition-all flex items-center space-x-4">
+            <div className="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <div>
+              <span className="text-xs font-semibold text-slate-400 block">Completed</span>
+              <span className="text-2xl font-black text-slate-900 dark:text-white leading-tight block mt-0.5">{completedCount}</span>
+              <span className="text-[11px] font-medium text-slate-400 block mt-0.5">This month</span>
+            </div>
+          </div>
+        </Link>
+
+        {/* Card 3: Pending */}
+        <Link href="/todos?status=PENDING" className="block">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 p-5 rounded-2xl shadow-xs hover:shadow-md transition-all flex items-center space-x-4">
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+              <Clock className="w-6 h-6" />
+            </div>
+            <div>
+              <span className="text-xs font-semibold text-slate-400 block">Pending</span>
+              <span className="text-2xl font-black text-slate-900 dark:text-white leading-tight block mt-0.5">{pendingCount}</span>
+              <span className="text-[11px] font-medium text-slate-400 block mt-0.5">Still to do</span>
+            </div>
+          </div>
+        </Link>
+
+        {/* Card 4: In Progress */}
+        <Link href="/todos?status=IN_PROGRESS" className="block">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 p-5 rounded-2xl shadow-xs hover:shadow-md transition-all flex items-center space-x-4">
+            <div className="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+              <Activity className="w-6 h-6" />
+            </div>
+            <div>
+              <span className="text-xs font-semibold text-slate-400 block">In Progress</span>
+              <span className="text-2xl font-black text-slate-900 dark:text-white leading-tight block mt-0.5">{inProgressCount}</span>
+              <span className="text-[11px] font-medium text-slate-400 block mt-0.5">In progress</span>
+            </div>
+          </div>
+        </Link>
+      </div>
+
+      {/* 3. Middle Section: 3-Column Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         
-        {/* Completed */}
-        <Link href="/todos?status=COMPLETED" className="block h-full">
-          <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-gray-800 p-4 rounded-xl shadow-sm hover:shadow-md transition-shadow h-full flex items-center gap-4">
-            <div className="w-12 h-12 bg-green-50 dark:bg-green-900/30 rounded-xl flex items-center justify-center shrink-0">
-              <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
-            </div>
-            <div>
-              <div className="text-lg font-bold text-green-600 dark:text-green-400 leading-none">{completedTasks}</div>
-              <div className="text-xs text-gray-500 font-medium mt-1">Completed</div>
-            </div>
-          </div>
-        </Link>
+        {/* Tasks Overview Card - Circle Chart centered, Data UNDER/BELOW circle */}
+        <div className="lg:col-span-4 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+          <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-3">Tasks Overview</h3>
 
-        {/* In Progress */}
-        <Link href="/todos?status=IN_PROGRESS" className="block h-full">
-          <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-gray-800 p-4 rounded-xl shadow-sm hover:shadow-md transition-shadow h-full flex items-center gap-4">
-            <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/30 rounded-xl flex items-center justify-center shrink-0">
-              <Clock className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-            </div>
-            <div>
-              <div className="text-lg font-bold text-blue-600 dark:text-blue-400 leading-none">{inProgressTasks}</div>
-              <div className="text-xs text-gray-500 font-medium mt-1">In Progress</div>
-            </div>
-          </div>
-        </Link>
-
-        {/* Pending */}
-        <Link href="/todos?status=PENDING" className="block h-full">
-          <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-gray-800 p-4 rounded-xl shadow-sm hover:shadow-md transition-shadow h-full flex items-center gap-4">
-            <div className="w-12 h-12 bg-amber-50 dark:bg-amber-900/30 rounded-xl flex items-center justify-center shrink-0">
-              <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-            </div>
-            <div>
-              <div className="text-lg font-bold text-amber-600 dark:text-amber-400 leading-none">{pendingTasks}</div>
-              <div className="text-xs text-gray-500 font-medium mt-1">Pending</div>
-            </div>
-          </div>
-        </Link>
-      </div>
-
-      {/* Main Grid */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-0">
-        {/* Left Column: Recent Activity */}
-        <div className="lg:col-span-2 flex flex-col gap-4 min-h-0 h-full">
-          {/* Recent Activity Section */}
-          <Card className="bg-white dark:bg-slate-900 border-none rounded-3xl shadow-sm overflow-hidden shrink-0">
-            <CardHeader className="px-5 py-3">
-              <CardTitle className="text-[15px] font-bold text-slate-800 dark:text-white leading-none">
-                Recent Activity
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="divide-y divide-gray-50 dark:divide-slate-800">
-                {activities.filter(a => !a.userId || a.userId === (user?.id || user?.email || "guest")).length > 0 ? (
-                  activities
-                    .filter(a => !a.userId || a.userId === (user?.id || user?.email || "guest"))
-                    .slice(0, 5)
-                    .map((act, index) => (
-                      <Link 
-                        href={act.href || "/todos"} 
-                        key={`${act.id}-${index}`} 
-                        className="group block p-3 px-5 hover:bg-purple-50/50 dark:hover:bg-purple-900/10 transition-colors"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-3">
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-sm ${
-                              act.type === 'project' 
-                                ? 'bg-purple-100 text-purple-600' 
-                                : act.type === 'file' 
-                                ? 'bg-emerald-100 text-emerald-600' 
-                                : act.status === 'COMPLETED' 
-                                ? 'bg-green-100 text-green-600' 
-                                : 'bg-blue-100 text-blue-600'
-                            }`}>
-                              {act.type === 'project' ? (
-                                <FolderKanban className="w-4 h-4" />
-                              ) : act.type === 'file' ? (
-                                <FileText className="w-4 h-4" />
-                              ) : act.status === 'COMPLETED' ? (
-                                <CheckCircle2 className="w-4 h-4" />
-                              ) : (
-                                <Clock className="w-4 h-4" />
-                              )}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-[13px] font-bold text-slate-800 dark:text-white group-hover:text-purple-600 transition-colors leading-tight truncate">
-                                {act.title}
-                              </p>
-                              <p className="text-[10px] font-semibold text-slate-400 mt-0.5 truncate">
-                                {act.subtitle ? `${act.subtitle} • ` : ''}
-                                {new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                              </p>
-                            </div>
-                          </div>
-                          <div>
-                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                              act.type === 'project' 
-                                ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' 
-                                : act.type === 'file' 
-                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' 
-                                : act.status === 'COMPLETED' 
-                                ? 'bg-green-500 text-white' 
-                                : 'bg-blue-50 text-blue-600 border border-blue-100 dark:bg-blue-900/30 dark:text-blue-300'
-                            }`}>
-                              {act.type}
-                            </span>
-                          </div>
-                        </div>
-                      </Link>
-                    ))
-                ) : (
-                  <div className="p-8 text-center text-xs font-medium text-gray-400">
-                    No activity yet.
-                  </div>
-                )}
+          <div className="flex flex-col items-center justify-center my-auto space-y-4">
+            {/* Donut Circle Chart Centered */}
+            <div className="relative w-40 h-40 flex items-center justify-center mx-auto shrink-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={donutData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={68}
+                    paddingAngle={3}
+                    dataKey="value"
+                  >
+                    {donutData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-2xl font-black text-slate-900 dark:text-white leading-none">{effectiveTotal}</span>
+                <span className="text-[11px] font-semibold text-slate-400 mt-1">Total</span>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+
+            {/* Data items UNDER / BELOW the circle */}
+            <div className="w-full pt-3 border-t border-slate-100 dark:border-slate-800/80 grid grid-cols-3 gap-1 text-center">
+              <div className="flex flex-col items-center">
+                <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                  <span>Completed</span>
+                </div>
+                <span className="text-xs font-bold text-slate-900 dark:text-white mt-1">
+                  {completedCount} <span className="text-[10px] font-normal text-slate-400">({completedPct}%)</span>
+                </span>
+              </div>
+
+              <div className="flex flex-col items-center">
+                <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                  <span>In Progress</span>
+                </div>
+                <span className="text-xs font-bold text-slate-900 dark:text-white mt-1">
+                  {inProgressCount} <span className="text-[10px] font-normal text-slate-400">({inProgressPct}%)</span>
+                </span>
+              </div>
+
+              <div className="flex flex-col items-center">
+                <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                  <span>Pending</span>
+                </div>
+                <span className="text-xs font-bold text-slate-900 dark:text-white mt-1">
+                  {pendingCount} <span className="text-[10px] font-normal text-slate-400">({pendingPct}%)</span>
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Right Column: Upcoming Projects */}
-        <div className="min-h-0 h-full">
-          <Card className="bg-white dark:bg-slate-900 border-none rounded-3xl shadow-sm overflow-hidden h-full flex flex-col">
-            <CardHeader className="p-4 border-b border-gray-50 dark:border-slate-800 flex flex-row items-center justify-between shrink-0">
-              <div className="flex items-center space-x-3">
-                <div className="p-1.5 bg-purple-100 text-purple-600 rounded-lg">
-                  <FolderKanban className="w-4 h-4" />
-                </div>
-                <div>
-                  <CardTitle className="text-[15px] font-bold text-slate-800 dark:text-white leading-none">Upcoming Projects</CardTitle>
-                  <div className="text-[9px] font-bold text-purple-600 bg-purple-100 px-1.5 py-0.5 rounded inline-block mt-1">
-                    Recently Active
+        {/* Upcoming Deadlines */}
+        <div className="lg:col-span-4 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Upcoming Deadlines</h3>
+            <Link href="/calendar" className="text-xs font-bold text-purple-600 dark:text-purple-400 hover:underline">View all</Link>
+          </div>
+
+          <div className="space-y-3 my-auto">
+            {upcomingDeadlines.map((item) => (
+              <div 
+                key={item.id}
+                onClick={() => {
+                  if (item.rawTask) {
+                    setTaskToEdit(item.rawTask);
+                    setIsTaskDialogOpen(true);
+                  }
+                }}
+                className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
+              >
+                <div className="flex items-center space-x-3 min-w-0 pr-2">
+                  <div className="w-9 h-9 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-500 flex items-center justify-center shrink-0">
+                    <Calendar className="w-4.5 h-4.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="text-xs font-bold text-slate-800 dark:text-white truncate">{item.title}</h4>
+                    <p className="text-[11px] text-slate-400 font-medium mt-0.5">{item.dateStr}</p>
                   </div>
                 </div>
+                <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full shrink-0 ${item.color}`}>
+                  {item.badge}
+                </span>
               </div>
-            </CardHeader>
-            <CardContent className="p-4 flex-1 flex flex-col min-h-0 overflow-y-auto no-scrollbar">
-              <div className="space-y-3">
-                {(!projects || projects.length === 0) ? (
-                   <div className="text-center py-10">
-                     <p className="text-gray-400 font-medium text-xs">No upcoming projects.</p>
-                   </div>
-                ) : (
-                  projects.slice(0, 4).map(project => (
-                    <div key={project.id} className="bg-gray-50 dark:bg-slate-800/50 p-3 rounded-2xl flex items-center justify-between group hover:bg-purple-600 transition-colors">
-                       <div className="flex-1 min-w-0 pr-2">
-                         <h4 className="font-bold text-slate-800 dark:text-white text-[13px] leading-tight group-hover:text-white transition-colors truncate">{project.name}</h4>
-                         <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium mt-0.5 group-hover:text-purple-100 transition-colors truncate">
-                           {project.description || 'No description'}
-                         </p>
-                       </div>
-                       <div className="flex items-center gap-1 shrink-0">
-                         <button 
-                           onClick={() => {
-                             logActivity({
-                               id: project.id,
-                               title: project.name,
-                               type: "project",
-                               subtitle: project.description || "Project Overview",
-                               href: "#"
-                             });
-                             setSelectedProject(project);
-                           }}
-                           className="bg-purple-600 text-white hover:bg-purple-700 group-hover:bg-white group-hover:text-purple-600 px-2.5 py-1 rounded-full text-[10px] font-bold shadow-xs transition-colors cursor-pointer"
-                         >
-                           View
-                         </button>
-                         <button 
-                           onClick={() => handleEditProject(project)}
-                           title="Edit Project"
-                           className="p-1.5 text-gray-500 dark:text-gray-400 group-hover:text-white hover:bg-purple-700 dark:hover:bg-purple-900/50 rounded-lg transition-colors cursor-pointer"
-                         >
-                           <Edit2 className="w-3.5 h-3.5" />
-                         </button>
-                         <button 
-                           onClick={() => handleDeleteProject(project.id, project.name)}
-                           title="Delete Project"
-                           className="p-1.5 text-gray-500 dark:text-gray-400 group-hover:text-red-200 hover:bg-red-600 dark:hover:bg-red-900/50 rounded-lg transition-colors cursor-pointer"
-                         >
-                           <Trash2 className="w-3.5 h-3.5" />
-                         </button>
-                       </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Recent Activity */}
+        <div className="lg:col-span-4 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Recent Activity</h3>
+            <div className="flex items-center gap-3">
+              {activities.length > 0 && (
+                <button
+                  onClick={clearActivities}
+                  className="text-xs font-semibold text-rose-500 hover:text-rose-700 transition-colors cursor-pointer"
+                  title="Clear all activity history"
+                >
+                  Clear history
+                </button>
+              )}
+              <Link href="/todos" className="text-xs font-bold text-purple-600 dark:text-purple-400 hover:underline">View all</Link>
+            </div>
+          </div>
+
+          <div className="relative pl-6 space-y-3.5 my-auto border-l-2 border-slate-100 dark:border-slate-800 ml-3 py-1">
+            {recentActivitiesList.length > 0 ? (
+              recentActivitiesList.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <div key={item.id} className="relative flex items-center justify-between text-xs group">
+                    <div className={`absolute -left-[31px] w-6 h-6 rounded-full ${item.iconBg} flex items-center justify-center shadow-xs text-white`}>
+                      <Icon className="w-3.5 h-3.5" />
                     </div>
-                  ))
-                )}
+
+                    <div className="min-w-0 pr-2">
+                      <h5 className="font-bold text-slate-800 dark:text-white truncate text-xs leading-tight">{item.title}</h5>
+                      <p className="text-[11px] text-slate-400 font-medium truncate mt-0.5">{item.subtitle}</p>
+                    </div>
+
+                    <div className="text-right shrink-0 flex items-center gap-2">
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-medium block">{item.time}</span>
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full inline-block mt-0.5 ${item.badgeColor}`}>
+                          {item.badge}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => removeActivity(item.id)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-slate-400 hover:text-rose-500 rounded cursor-pointer"
+                        title="Remove activity entry"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="text-center py-6 text-slate-400 text-xs font-medium">
+                No recent activity
               </div>
-            </CardContent>
-          </Card>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* 1. Add / Edit Project Dialog */}
+      {/* 4. Bottom Section: My Tasks */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 rounded-2xl p-5 shadow-xs flex flex-col">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-bold text-slate-900 dark:text-white">My Tasks</h3>
+          <Link href="/todos" className="text-xs font-bold text-purple-600 dark:text-purple-400 hover:underline">View all</Link>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex items-center space-x-6 border-b border-slate-100 dark:border-slate-800 text-xs font-semibold mb-4">
+          <button
+            onClick={() => setActiveTaskTab("ALL")}
+            className={`pb-2.5 transition-all cursor-pointer ${
+              activeTaskTab === "ALL"
+                ? "border-b-2 border-purple-600 text-purple-600 dark:text-purple-400 font-bold"
+                : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+            }`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setActiveTaskTab("TODAY")}
+            className={`pb-2.5 transition-all cursor-pointer ${
+              activeTaskTab === "TODAY"
+                ? "border-b-2 border-purple-600 text-purple-600 dark:text-purple-400 font-bold"
+                : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+            }`}
+          >
+            Today
+          </button>
+          <button
+            onClick={() => setActiveTaskTab("UPCOMING")}
+            className={`pb-2.5 transition-all cursor-pointer ${
+              activeTaskTab === "UPCOMING"
+                ? "border-b-2 border-purple-600 text-purple-600 dark:text-purple-400 font-bold"
+                : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+            }`}
+          >
+            Upcoming
+          </button>
+          <button
+            onClick={() => setActiveTaskTab("OVERDUE")}
+            className={`pb-2.5 transition-all cursor-pointer ${
+              activeTaskTab === "OVERDUE"
+                ? "border-b-2 border-purple-600 text-purple-600 dark:text-purple-400 font-bold"
+                : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+            }`}
+          >
+            Overdue
+          </button>
+          <button
+            onClick={() => setActiveTaskTab("COMPLETED")}
+            className={`pb-2.5 transition-all cursor-pointer ${
+              activeTaskTab === "COMPLETED"
+                ? "border-b-2 border-purple-600 text-purple-600 dark:text-purple-400 font-bold"
+                : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+            }`}
+          >
+            Completed
+          </button>
+        </div>
+
+        {/* Task Rows List */}
+        <div className="divide-y divide-slate-50 dark:divide-slate-800/60">
+          {filteredMyTasks.length > 0 ? (
+            filteredMyTasks.map((t: any) => {
+              const isCompleted = t.status === "COMPLETED";
+              return (
+                <div key={t.id} className="py-3 flex items-center justify-between group hover:bg-slate-50/50 dark:hover:bg-slate-800/30 px-2 rounded-xl transition-colors">
+                  <div className="flex items-center space-x-3 min-w-0 pr-3">
+                    <button
+                      onClick={() => toggleTaskMutation.mutate(t)}
+                      className="cursor-pointer text-slate-300 hover:text-purple-600 transition-colors shrink-0"
+                    >
+                      {isCompleted ? (
+                        <CheckCircle2 className="w-5 h-5 text-purple-600 fill-purple-600/10" />
+                      ) : (
+                        <div className="w-5 h-5 rounded-full border-2 border-slate-300 dark:border-slate-600 hover:border-purple-600 transition-colors" />
+                      )}
+                    </button>
+                    <span className={`text-xs font-bold truncate ${isCompleted ? "line-through text-slate-400" : "text-slate-800 dark:text-white"}`}>
+                      {t.title}
+                    </span>
+                    {getPriorityPill(t.priority)}
+                  </div>
+
+                  <div className="flex items-center space-x-6 text-xs text-slate-400 shrink-0 font-medium">
+                    <div className="flex items-center space-x-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                      <span>
+                        {(() => {
+                          const dateRaw = t.dueDate || t.endDate || t.startDate;
+                          if (!dateRaw) return "No due date";
+                          try {
+                            return new Date(dateRaw).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            });
+                          } catch {
+                            return "No due date";
+                          }
+                        })()}
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setTaskToEdit(t);
+                        setIsTaskDialogOpen(true);
+                      }}
+                      className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                      title="Edit task"
+                    >
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="py-10 text-center text-xs text-slate-400 font-medium">
+              No tasks found for this filter tab.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Modals & Dialogs */}
+      <TodoDialog
+        open={isTaskDialogOpen}
+        onOpenChange={(open) => {
+          setIsTaskDialogOpen(open);
+          if (!open) setTaskToEdit(null);
+        }}
+        taskToEdit={taskToEdit}
+      />
+
       <ProjectDialog 
         open={isProjectDialogOpen} 
         onOpenChange={(open) => {
@@ -488,302 +696,55 @@ export default function DashboardPage() {
         projectToEdit={projectToEdit}
       />
 
-      {/* 2. Add Files & Folders Dialog */}
+      {/* Upload File Dialog */}
       <Dialog open={isAddFilesDialogOpen} onOpenChange={setIsAddFilesDialogOpen}>
-        <DialogContent className="sm:max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6">
+        <DialogContent className="sm:max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <Paperclip className="w-5 h-5 text-purple-600" />
-              Add Files & Folders to Workspace
+              Upload Workspace Files
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-500 dark:text-slate-400">
-              Upload documents, zip archives, images, audio, video, or select an entire folder.
+              Select files or documents to attach to your workspace.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            {/* File Drop & Selection Area */}
-            <div 
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={handleDrop}
-              className="border-2 border-dashed border-purple-200 dark:border-purple-900/50 rounded-2xl p-6 text-center bg-purple-50/40 dark:bg-purple-950/20 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors relative group"
-            >
-              <div className="flex flex-col items-center justify-center space-y-3">
-                <div className="w-12 h-12 rounded-2xl bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <UploadCloud className="w-6 h-6" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-800 dark:text-white">
-                    Drag & Drop Files, Zip Archives, or Folders here
-                  </p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    Or choose one of the browse options below:
-                  </p>
-                </div>
-                
-                <div className="flex flex-wrap items-center justify-center gap-2 pt-1 z-20">
-                  <label className="bg-purple-600 hover:bg-purple-700 active:scale-95 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs flex items-center gap-1.5">
-                    <Paperclip className="w-3.5 h-3.5" />
-                    <span>Browse Files & Zips</span>
-                    <input
-                      type="file"
-                      multiple
-                      accept={ACCEPTED_FILE_TYPES}
-                      onChange={handleSelectFiles}
-                      className="hidden"
-                    />
-                  </label>
-
-                  <label className="bg-white dark:bg-slate-800 border border-purple-200 dark:border-slate-700 hover:border-purple-300 active:scale-95 text-purple-700 dark:text-purple-300 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs flex items-center gap-1.5">
-                    <Folder className="w-3.5 h-3.5 text-amber-500" />
-                    <span>Browse Entire Folder</span>
-                    <input
-                      type="file"
-                      multiple
-                      {...({ webkitdirectory: "", directory: "", mozdirectory: "" } as any)}
-                      onChange={handleSelectFiles}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-              </div>
+            <div className="border-2 border-dashed border-purple-200 dark:border-purple-900/50 rounded-2xl p-6 text-center bg-purple-50/40 dark:bg-purple-950/20">
+              <UploadCloud className="w-8 h-8 text-purple-600 mx-auto mb-2" />
+              <p className="text-xs font-bold text-slate-800 dark:text-white">Choose files to upload</p>
+              <label className="mt-3 inline-block bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all shadow-xs">
+                <span>Browse Files</span>
+                <input
+                  type="file"
+                  multiple
+                  accept={ACCEPTED_FILE_TYPES}
+                  onChange={handleSelectFiles}
+                  className="hidden"
+                />
+              </label>
             </div>
 
-            {/* Allowed file category badges */}
-            <div className="flex flex-wrap gap-1.5 justify-center py-1">
-              <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-[10px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1">
-                <FileText className="w-3 h-3 text-blue-500" /> Documents (PDF, DOC, XLS, TXT, CSV)
-              </span>
-              <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-[10px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1">
-                <Archive className="w-3 h-3 text-amber-500" /> Zip & Archives (ZIP, RAR, 7Z, TAR, GZ)
-              </span>
-              <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-[10px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1">
-                <Image className="w-3 h-3 text-emerald-500" /> Images (JPEG, JPG, PNG, WEBP)
-              </span>
-              <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-[10px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1">
-                <Music className="w-3 h-3 text-purple-500" /> Audio (MP3, WAV)
-              </span>
-              <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-[10px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1">
-                <Video className="w-3 h-3 text-pink-500" /> Videos (MP4, MOV, AVI)
-              </span>
-            </div>
-
-            {/* Selected files list preview */}
             {selectedFiles.length > 0 && (
-              <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                <p className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-                  <span>Selected Items ({selectedFiles.length}):</span>
-                  <button 
-                    onClick={() => setSelectedFiles([])}
-                    className="text-[10px] text-red-500 hover:underline font-semibold"
-                  >
-                    Clear All
-                  </button>
-                </p>
-                {selectedFiles.map((file, idx) => {
-                  const ext = file.name.split('.').pop()?.toLowerCase();
-                  const isArchive = ["zip", "rar", "7z", "tar", "gz", "bz2"].includes(ext || "") || file.type.includes("zip") || file.type.includes("compressed");
-                  return (
-                    <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs">
-                      <div className="flex items-center gap-2 min-w-0 pr-2">
-                        {isArchive ? (
-                          <Archive className="w-4 h-4 text-amber-500 shrink-0" />
-                        ) : file.type.startsWith("image/") ? (
-                          <Image className="w-4 h-4 text-emerald-500 shrink-0" />
-                        ) : file.type.startsWith("audio/") ? (
-                          <Music className="w-4 h-4 text-purple-500 shrink-0" />
-                        ) : file.type.startsWith("video/") ? (
-                          <Video className="w-4 h-4 text-pink-500 shrink-0" />
-                        ) : (
-                          <FileText className="w-4 h-4 text-blue-500 shrink-0" />
-                        )}
-                        <span className="font-semibold text-slate-800 dark:text-white truncate">{file.name}</span>
-                        <span className="text-[10px] text-slate-400 shrink-0">
-                          ({Math.round(file.size / 1024)} KB)
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => handleRemoveFile(idx)}
-                        className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-red-500 transition-colors"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  );
-                })}
+              <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                {selectedFiles.map((f, i) => (
+                  <div key={i} className="flex items-center justify-between p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs">
+                    <span className="font-semibold truncate">{f.name}</span>
+                    <button onClick={() => setSelectedFiles(prev => prev.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-red-500">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0 mt-2">
-            <button
-              onClick={() => setIsAddFilesDialogOpen(false)}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
-            >
+          <DialogFooter className="gap-2">
+            <button onClick={() => setIsAddFilesDialogOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 rounded-xl">
               Cancel
             </button>
-            <button
-              onClick={handleUploadFilesSubmit}
-              disabled={isUploadingFiles || selectedFiles.length === 0}
-              className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white px-5 py-2 rounded-xl text-xs font-semibold transition-all disabled:opacity-50 shadow-sm cursor-pointer"
-            >
-              {isUploadingFiles ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Uploading Files...</span>
-                </>
-              ) : (
-                <>
-                  <Paperclip className="w-3.5 h-3.5" />
-                  <span>Upload & Save Files</span>
-                </>
-              )}
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 3. Add Member Dialog */}
-      <Dialog open={isAddMemberDialogOpen} onOpenChange={setIsAddMemberDialogOpen}>
-        <DialogContent className="sm:max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <UserPlus className="w-5 h-5 text-purple-600" />
-              Add Team Member
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500 dark:text-slate-400">
-              Invite a new member to collaborate on your workspace projects and tasks.
-            </DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={handleAddMemberSubmit} className="space-y-4 py-2">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Member Name
-              </label>
-              <input
-                type="text"
-                value={memberName}
-                onChange={(e) => setMemberName(e.target.value)}
-                placeholder="e.g. Sarah Jenkins"
-                className="w-full px-3.5 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Email Address <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="email"
-                required
-                value={memberEmail}
-                onChange={(e) => setMemberEmail(e.target.value)}
-                placeholder="sarah@example.com"
-                className="w-full px-3.5 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Role
-              </label>
-              <select
-                value={memberRole}
-                onChange={(e) => setMemberRole(e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-              >
-                <option value="Developer">Developer</option>
-                <option value="Designer">Designer</option>
-                <option value="Project Manager">Project Manager</option>
-                <option value="Admin">Admin</option>
-              </select>
-            </div>
-
-            <DialogFooter className="gap-2 sm:gap-0 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsAddMemberDialogOpen(false)}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-5 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-sm transition-colors"
-              >
-                Send Invite
-              </button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* 4. View Project Details Dialog */}
-      <Dialog open={!!selectedProject} onOpenChange={(open) => !open && setSelectedProject(null)}>
-        <DialogContent className="sm:max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6">
-          <DialogHeader>
-            <div className="flex items-center space-x-3">
-              <div className="p-2 bg-purple-100 text-purple-600 rounded-xl">
-                <FolderKanban className="w-5 h-5" />
-              </div>
-              <div>
-                <DialogTitle className="text-lg font-bold text-slate-900 dark:text-white leading-tight">
-                  {selectedProject?.name}
-                </DialogTitle>
-                <span className="inline-block mt-1 text-[10px] font-bold text-purple-600 bg-purple-50 dark:bg-purple-900/30 px-2 py-0.5 rounded-full">
-                  Project Details
-                </span>
-              </div>
-            </div>
-          </DialogHeader>
-
-          <div className="space-y-4 py-3 text-xs">
-            <div>
-              <h5 className="font-bold text-slate-700 dark:text-slate-300 mb-1">Description</h5>
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-                {selectedProject?.description || "No detailed description provided for this project."}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 pt-1">
-              <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-                <span className="text-[10px] font-semibold text-slate-400 block">Created On</span>
-                <span className="font-bold text-slate-800 dark:text-slate-200">
-                  {selectedProject ? new Date(selectedProject.createdAt).toLocaleDateString() : '-'}
-                </span>
-              </div>
-              <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-                <span className="text-[10px] font-semibold text-slate-400 block">Owner ID</span>
-                <span className="font-bold text-slate-800 dark:text-slate-200 truncate block">
-                  {selectedProject?.ownerId || 'Workspace Admin'}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-2">
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <button
-                onClick={() => selectedProject && handleDeleteProject(selectedProject.id, selectedProject.name)}
-                className="px-3 py-2 text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 rounded-xl transition-colors flex items-center gap-1 cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Delete</span>
-              </button>
-              <button
-                onClick={() => selectedProject && handleEditProject(selectedProject)}
-                className="px-3 py-2 text-xs font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-900/30 hover:bg-purple-100 rounded-xl transition-colors flex items-center gap-1 cursor-pointer"
-              >
-                <Edit2 className="w-3.5 h-3.5" />
-                <span>Edit</span>
-              </button>
-            </div>
-            <button
-              onClick={() => setSelectedProject(null)}
-              className="px-4 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-sm transition-colors cursor-pointer w-full sm:w-auto"
-            >
-              Close
+            <button onClick={handleUploadFilesSubmit} disabled={isUploadingFiles || selectedFiles.length === 0} className="px-5 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl disabled:opacity-50">
+              {isUploadingFiles ? "Uploading..." : "Upload"}
             </button>
           </DialogFooter>
         </DialogContent>

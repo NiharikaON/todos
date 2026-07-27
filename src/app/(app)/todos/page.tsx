@@ -11,12 +11,13 @@ import { AttachmentLink } from "@/components/AttachmentLink";
 import { Task } from "@/types";
 import { useSearch } from "@/providers/SearchProvider";
 import { useActivity } from "@/providers/ActivityProvider";
+import { getRepeatBadgeText, getReminderBadgeText, calculateNextOccurrenceDate } from "@/utils/reminderEngine";
 
 function TodosContent() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const { searchQuery, setSearchQuery } = useSearch();
-  const { logActivity } = useActivity();
+  const { logActivity, removeActivity } = useActivity();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null);
@@ -43,9 +44,22 @@ function TodosContent() {
   });
 
   const toggleMutation = useMutation({
-    mutationFn: (task: { id: string, status: string }) => {
+    mutationFn: (task: Task) => {
       const newStatus = task.status === "COMPLETED" ? "PENDING" : "COMPLETED";
-      return todoRepository.updateTask(task.id, { status: newStatus });
+
+      if (newStatus === "COMPLETED" && task.repeat && task.repeat !== "NONE") {
+        const nextOcc = calculateNextOccurrenceDate(task, task.dueDate ? new Date(task.dueDate) : new Date());
+        toast.success(`Recurring task scheduled for next occurrence!`);
+        return todoRepository.updateTask(task.id, {
+          status: "PENDING",
+          dueDate: nextOcc,
+          endDate: nextOcc,
+          startDate: nextOcc,
+          nextOccurrenceDate: calculateNextOccurrenceDate(task, new Date(nextOcc)),
+        });
+      }
+
+      return todoRepository.updateTask(task.id, { status: newStatus as any });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
@@ -57,8 +71,9 @@ function TodosContent() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => todoRepository.deleteTask(id),
-    onSuccess: () => {
+    onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      removeActivity(id);
       toast.success("Task deleted");
     },
     onError: () => {
@@ -99,7 +114,7 @@ function TodosContent() {
       subtitle: `${task.priority} priority`,
       href: "/todos",
     });
-    toggleMutation.mutate({ id: task.id, status: task.status });
+    toggleMutation.mutate(task);
   };
 
   const handleStatusChange = (val: string) => {
@@ -289,7 +304,17 @@ function TodosContent() {
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-3 ml-4 flex-shrink-0">
+                <div className="flex items-center gap-2 ml-4 flex-shrink-0 flex-wrap justify-end">
+                  {getRepeatBadgeText(task.repeat) && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-900/20 dark:border-blue-900/30 dark:text-blue-300">
+                      {getRepeatBadgeText(task.repeat)}
+                    </span>
+                  )}
+                  {getReminderBadgeText(task) && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-100 dark:bg-amber-900/20 dark:border-amber-900/30 dark:text-amber-300">
+                      {getReminderBadgeText(task)}
+                    </span>
+                  )}
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider
                     ${task.priority === 'HIGH' ? 'bg-red-50 text-red-600 border border-red-100 dark:bg-red-900/20 dark:border-red-900/30 dark:text-red-400' : ''}
                     ${task.priority === 'MEDIUM' ? 'bg-orange-50 text-orange-600 border border-orange-100 dark:bg-orange-900/20 dark:border-orange-900/30 dark:text-orange-400' : ''}

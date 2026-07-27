@@ -64,8 +64,7 @@ function mapAppSyncTodoToTask(appSyncTodo: any): Task {
 export class AmplifyTodoRepository implements ITodoRepository {
   private async getOwnerId(): Promise<string> {
     const user = await amplifyAuthRepository.getCurrentUser();
-    if (!user) throw new Error("Unauthorized");
-    return user.id;
+    return user?.id || "guest-user";
   }
 
   async getTasks(): Promise<Task[]> {

@@ -8,6 +8,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import { TodoDialog } from "@/components/TodoDialog";
 import { FilePreviewGallery } from "@/components/FilePreviewGallery";
 import { downloadFileDirectly } from "@/utils/download";
+import { getRepeatBadgeText, getReminderBadgeText } from "@/utils/reminderEngine";
 import toast from "react-hot-toast";
 import { 
   StickyNote, 
@@ -207,6 +208,16 @@ export default function NotesPage() {
                     <span className={`px-2 py-0.5 rounded-md ${theme.tag}`}>
                       {task.category || "Personal"}
                     </span>
+                    {getRepeatBadgeText(task.repeat) && (
+                      <span className="px-2 py-0.5 rounded-md bg-blue-600 text-white font-bold">
+                        {getRepeatBadgeText(task.repeat)}
+                      </span>
+                    )}
+                    {getReminderBadgeText(task) && (
+                      <span className="px-2 py-0.5 rounded-md bg-amber-600 text-white font-bold">
+                        {getReminderBadgeText(task)}
+                      </span>
+                    )}
                     <span className={`px-2 py-0.5 rounded-md ${
                       task.priority === "HIGH" ? "bg-red-500 text-white" :
                       task.priority === "MEDIUM" ? "bg-amber-500 text-white" :

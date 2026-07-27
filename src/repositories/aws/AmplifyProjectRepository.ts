@@ -67,8 +67,7 @@ function mapAppSyncProjectToProject(appSyncProject: any): Project {
 export class AmplifyProjectRepository implements IProjectRepository {
   private async getOwnerId(): Promise<string> {
     const user = await amplifyAuthRepository.getCurrentUser();
-    if (!user) throw new Error("Unauthorized");
-    return user.id;
+    return user?.id || "guest-user";
   }
 
   async getProjects(): Promise<Project[]> {

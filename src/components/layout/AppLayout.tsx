@@ -215,33 +215,19 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Top Header */}
         <header className="h-20 flex items-center justify-between px-6 md:px-10 flex-shrink-0 mt-4">
           <div className="flex-1 max-w-xl flex items-center space-x-3">
-            {pathname !== "/notes" && (
-              <>
-                <button
-                  onClick={() => router.back()}
-                  title="Go Back"
-                  className="w-10 h-10 rounded-full bg-white dark:bg-slate-900 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-slate-800 shadow-sm transition-all shrink-0 cursor-pointer active:scale-95 border border-gray-100 dark:border-slate-800"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                
-                <div className="relative group flex items-center flex-1">
-                  <Search className="w-4 h-4 text-gray-400 absolute left-4 pointer-events-none group-focus-within:text-purple-500 transition-colors" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={handleSearchChange}
-                    placeholder="Search tasks by name, priority, status..."
-                    className="block w-full pl-11 pr-5 py-3 border-none bg-white dark:bg-slate-900 rounded-full text-sm text-slate-800 dark:text-slate-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm transition-all"
-                  />
-                </div>
-              </>
+            {pathname !== "/dashboard" && (
+              <button
+                onClick={() => router.back()}
+                title="Go Back"
+                className="w-10 h-10 rounded-full bg-white dark:bg-slate-900 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-slate-800 shadow-sm transition-all shrink-0 cursor-pointer active:scale-95 border border-gray-100 dark:border-slate-800"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
             )}
           </div>
 
           <div className="flex items-center space-x-4 ml-6">
-            {pathname !== "/notes" && (
-              <div className="relative">
+            <div className="relative">
                 <button 
                   title="Notifications" 
                   onClick={() => setIsNotificationOpen(!isNotificationOpen)}
@@ -302,7 +288,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   </div>
                 )}
               </div>
-            )}
             
             <div className="flex items-center space-x-3 ml-2">
               <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm shrink-0">

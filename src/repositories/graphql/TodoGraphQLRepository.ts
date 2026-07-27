@@ -6,16 +6,29 @@ import { TodoOperations } from "@/graphql/operations";
 import { AmplifyDataAdapter } from "@/adapters/AmplifyDataAdapter";
 
 
+function cleanIsoDate(d?: string | null): string | null {
+  if (!d || typeof d !== "string" || !d.trim() || d.trim().startsWith("T")) {
+    return null;
+  }
+  return d;
+}
+
 export class TodoGraphQLRepository implements ITodoRepository {
-  private async getOwnerId(): Promise<string> {
-    const user = await authRepository.getCurrentUser();
-    if (!user) throw new Error("Unauthorized");
-    return user.id;
+  private async getOwnerId(): Promise<string | null> {
+    try {
+      const user = await authRepository.getCurrentUser();
+      return user?.id || null;
+    } catch {
+      return null;
+    }
   }
 
   async getTasks(): Promise<Task[]> {
     try {
       const ownerId = await this.getOwnerId();
+      if (!ownerId) {
+        return [];
+      }
       const response = await generateClient().graphql({
         query: TodoOperations.LIST_TODOS,
         variables: { userId: ownerId },
@@ -24,7 +37,8 @@ export class TodoGraphQLRepository implements ITodoRepository {
       const items = (response as any).data?.listTodos || [];
       return items.map(AmplifyDataAdapter.mapAppSyncTodoToTask);
     } catch (error) {
-      throw AmplifyDataAdapter.mapError(error, "Failed to fetch tasks");
+      console.warn("Could not fetch tasks for user:", error);
+      return [];
     }
   }
 
@@ -55,9 +69,11 @@ export class TodoGraphQLRepository implements ITodoRepository {
           description: task.description || null,
           status: task.status,
           priority: task.priority || 'MEDIUM',
-          dueDate: task.dueDate || null,
-          startDate: (task as any).startDate || null,
-          endDate: (task as any).endDate || null,
+          dueDate: cleanIsoDate(task.dueDate),
+          startDate: cleanIsoDate((task as any).startDate),
+          endDate: cleanIsoDate((task as any).endDate),
+          startTime: (task as any).startTime || null,
+          dueTime: (task as any).dueTime || null,
           projectId: (task as any).projectId || null,
           assigneeId: (task as any).assigneeId || null,
           labels: (task as any).labels || null,
@@ -88,9 +104,11 @@ export class TodoGraphQLRepository implements ITodoRepository {
       if (updates.description !== undefined) { variableDefs.push('$description: String'); argsDefs.push('description: $description'); variables.description = updates.description; }
       if (updates.status !== undefined) { variableDefs.push('$status: String'); argsDefs.push('status: $status'); variables.status = updates.status; }
       if (updates.priority !== undefined) { variableDefs.push('$priority: String'); argsDefs.push('priority: $priority'); variables.priority = updates.priority; }
-      if (updates.dueDate !== undefined) { variableDefs.push('$dueDate: AWSDateTime'); argsDefs.push('dueDate: $dueDate'); variables.dueDate = updates.dueDate; }
-      if ((updates as any).startDate !== undefined) { variableDefs.push('$startDate: AWSDateTime'); argsDefs.push('startDate: $startDate'); variables.startDate = (updates as any).startDate; }
-      if ((updates as any).endDate !== undefined) { variableDefs.push('$endDate: AWSDateTime'); argsDefs.push('endDate: $endDate'); variables.endDate = (updates as any).endDate; }
+      if (updates.dueDate !== undefined) { variableDefs.push('$dueDate: AWSDateTime'); argsDefs.push('dueDate: $dueDate'); variables.dueDate = cleanIsoDate(updates.dueDate); }
+      if ((updates as any).startDate !== undefined) { variableDefs.push('$startDate: AWSDateTime'); argsDefs.push('startDate: $startDate'); variables.startDate = cleanIsoDate((updates as any).startDate); }
+      if ((updates as any).endDate !== undefined) { variableDefs.push('$endDate: AWSDateTime'); argsDefs.push('endDate: $endDate'); variables.endDate = cleanIsoDate((updates as any).endDate); }
+      if ((updates as any).startTime !== undefined) { variableDefs.push('$startTime: String'); argsDefs.push('startTime: $startTime'); variables.startTime = (updates as any).startTime; }
+      if ((updates as any).dueTime !== undefined) { variableDefs.push('$dueTime: String'); argsDefs.push('dueTime: $dueTime'); variables.dueTime = (updates as any).dueTime; }
       if ((updates as any).assigneeId !== undefined) { variableDefs.push('$assigneeId: String'); argsDefs.push('assigneeId: $assigneeId'); variables.assigneeId = (updates as any).assigneeId; }
       if ((updates as any).labels !== undefined) { variableDefs.push('$labels: [String!]'); argsDefs.push('labels: $labels'); variables.labels = (updates as any).labels; }
       if ((updates as any).comments !== undefined) { variableDefs.push('$comments: [String!]'); argsDefs.push('comments: $comments'); variables.comments = (updates as any).comments; }

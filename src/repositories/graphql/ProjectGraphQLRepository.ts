@@ -9,8 +9,7 @@ import { AmplifyDataAdapter } from "@/adapters/AmplifyDataAdapter";
 export class ProjectGraphQLRepository implements IProjectRepository {
   private async getOwnerId(): Promise<string> {
     const user = await authRepository.getCurrentUser();
-    if (!user) throw new Error("Unauthorized");
-    return user.id;
+    return user?.id || "guest-user";
   }
 
   async getProjects(): Promise<Project[]> {

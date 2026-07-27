@@ -12,7 +12,7 @@ import { todoRepository } from "@/repositories";
 import { Task } from "@/types";
 import { TodoDialog } from "@/components/TodoDialog";
 import toast from "react-hot-toast";
-import { Search, Filter, AlertTriangle, Plus, Calendar as CalendarIcon, Download, LayoutGrid, CheckCircle, Clock, MoreHorizontal } from "lucide-react";
+import { Search, Filter, AlertTriangle, Plus, Calendar as CalendarIcon, Download, LayoutGrid, CheckCircle, Clock, MoreHorizontal, Eye, EyeOff } from "lucide-react";
 import { exportTasksToCSV, exportTasksToICS } from "@/utils/exportCalendar";
 import { MiniCalendar } from "@/components/calendar/MiniCalendar";
 import { WeeklyProductivityChart } from "@/components/calendar/WeeklyProductivityChart";
@@ -44,6 +44,7 @@ export default function CalendarPage() {
   
   // New filters
   const [selectedCategories, setSelectedCategories] = useState<string[]>(["Personal", "Work", "Other", "Shopping", "Health", "Finance"]);
+  const [showDailyHabits, setShowDailyHabits] = useState<boolean>(false);
   
   const [selectedDateStr, setSelectedDateStr] = useState<string | null>(null);
   const [jumpDate, setJumpDate] = useState("");
@@ -80,9 +81,14 @@ export default function CalendarPage() {
       const category = task.category || "Personal";
       const matchesCategory = selectedCategories.includes(category);
 
+      const isDailyHabit = task.recurrenceRule && (task.recurrenceRule === "FREQ=DAILY" || task.recurrenceRule === "FREQ=WEEKDAYS");
+      if (!showDailyHabits && isDailyHabit) {
+        return false;
+      }
+
       return matchesSearch && matchesStatus && matchesPriority && matchesCategory && (task.dueDate || task.startDate);
     });
-  }, [tasks, searchQuery, statusFilter, priorityFilter, selectedCategories]);
+  }, [tasks, searchQuery, statusFilter, priorityFilter, selectedCategories, showDailyHabits]);
 
   // KPI Calculations
   const kpiStats = useMemo(() => {
@@ -156,12 +162,14 @@ export default function CalendarPage() {
 
       const start = task.startDate ? new Date(task.startDate) : new Date(task.dueDate as string);
       const end = task.endDate ? new Date(task.endDate) : new Date(start.getTime() + 60 * 60 * 1000);
+      const hasExplicitTime = !!(task.startTime || task.dueTime);
 
       const baseEvent: any = {
         id: task.id,
         title: task.title,
         backgroundColor,
         borderColor,
+        allDay: !hasExplicitTime,
         extendedProps: {
           task,
           isOverdue,
@@ -169,10 +177,19 @@ export default function CalendarPage() {
       };
 
       if (task.recurrenceRule && task.recurrenceRule !== "NONE") {
-        baseEvent.rrule = `DTSTART:${start.toISOString().replace(/[-:]/g, "").split('.')[0]}Z\nRRULE:${task.recurrenceRule}`;
+        const dateOnlyStr = task.startDate ? task.startDate.slice(0, 10).replace(/-/g, "") : (task.dueDate ? task.dueDate.slice(0, 10).replace(/-/g, "") : "");
+        if (!hasExplicitTime && dateOnlyStr) {
+          baseEvent.rrule = `DTSTART:${dateOnlyStr}\nRRULE:${task.recurrenceRule}`;
+        } else {
+          baseEvent.rrule = `DTSTART:${start.toISOString().replace(/[-:]/g, "").split('.')[0]}Z\nRRULE:${task.recurrenceRule}`;
+        }
       } else {
-        baseEvent.start = start.toISOString();
-        baseEvent.end = end.toISOString();
+        if (!hasExplicitTime) {
+          baseEvent.start = task.startDate ? task.startDate.slice(0, 10) : (task.dueDate ? task.dueDate.slice(0, 10) : start.toISOString().slice(0, 10));
+        } else {
+          baseEvent.start = start.toISOString();
+          baseEvent.end = end.toISOString();
+        }
       }
 
       return baseEvent;
@@ -340,13 +357,41 @@ export default function CalendarPage() {
                   type="checkbox" 
                   checked={selectedCategories.includes(cat)}
                   onChange={() => toggleCategory(cat)}
-                  className="rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 border-gray-300 dark:bg-gray-700 dark:border-gray-600"
+                  className="rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 border-gray-300 dark:bg-gray-700 dark:border-gray-600 cursor-pointer"
                 />
                 <span className="ml-3 text-sm text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white transition">
                   {cat}
                 </span>
               </label>
             ))}
+
+            <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
+              <button
+                type="button"
+                onClick={() => setShowDailyHabits(!showDailyHabits)}
+                className={`w-full py-2.5 px-3.5 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer shadow-xs ${
+                  showDailyHabits
+                    ? "bg-purple-600 text-white hover:bg-purple-700 active:scale-98 shadow-purple-200 dark:shadow-none"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  {showDailyHabits ? (
+                    <Eye className="w-4 h-4 text-white" />
+                  ) : (
+                    <EyeOff className="w-4 h-4 text-slate-400" />
+                  )}
+                  <span>Daily Habits</span>
+                </div>
+                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                  showDailyHabits
+                    ? "bg-purple-500 text-white"
+                    : "bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400"
+                }`}>
+                  {showDailyHabits ? "SHOWING" : "HIDDEN"}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -440,6 +485,7 @@ export default function CalendarPage() {
               right: "dayGridMonth,listWeek",
             }}
             events={events}
+            dayMaxEvents={2}
             editable={true}
             droppable={true}
             eventDrop={handleEventDrop}
